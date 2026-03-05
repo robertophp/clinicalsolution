@@ -11,6 +11,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 
 from .config import settings
 from .services.gemini_service import GeminiService, GeminiServiceError
+from .services.conversation_memory import ConversationMemoryService
 
 app = FastAPI(title="Clinica Assistant Agent", version="0.1.0")
 
@@ -19,6 +20,19 @@ class ClinicConfig(BaseModel):
     id: str
     name: str
     system_prompt: str
+
+
+class ChatRequest(BaseModel):
+    """Request body for the JSON /chat endpoint (testing without Twilio)."""
+
+    from_number: str = ""
+    body: str = ""
+
+
+class ChatResponse(BaseModel):
+    """JSON response with the assistant reply."""
+
+    reply: str
 
 
 def _load_clinics_config(path: Path) -> Dict[str, ClinicConfig]:
@@ -61,6 +75,57 @@ gemini_service = GeminiService(
     project_id=settings.PROJECT_ID,
     location=settings.LOCATION,
 )
+conversation_memory = ConversationMemoryService(project_id=settings.PROJECT_ID)
+
+
+def _build_chat_history_with_memory(
+    clinic_id: str,
+    from_number: str,
+    body: str,
+) -> List[Dict[str, str]]:
+    """
+    Builds chat_history: last N messages from Firestore (within TTL) + current user message.
+    """
+    history = conversation_memory.get_recent_messages(clinic_id, from_number)
+    current = {"role": "user", "content": f"De: {from_number}. Mensaje: {body}"}
+    return [*history, current]
+
+
+def _generate_and_persist_reply(
+    clinic_id: str,
+    from_number: str,
+    body: str,
+    system_prompt: str,
+    clinic_name: str,
+) -> str:
+    """
+    Recupera historial, construye system instruction (clínica + primer mensaje vs conversacional),
+    llama a Gemini con system primero e historial después, persiste y devuelve la respuesta.
+    """
+    history = conversation_memory.get_recent_messages(clinic_id, from_number)
+    is_first_message = len(history) == 0
+
+    if is_first_message:
+        extra_instruction = (
+            "\n\n[Instrucción para esta respuesta: Es el primer mensaje del usuario. "
+            f"Preséntate formalmente con el nombre de la clínica ({clinic_name}).]"
+        )
+    else:
+        extra_instruction = (
+            "\n\n[Instrucción para esta respuesta: Ya hay historial de conversación. "
+            "Sé directa y conversacional.]"
+        )
+
+    system_prompt_effective = system_prompt.strip() + extra_instruction
+    chat_history = _build_chat_history_with_memory(clinic_id, from_number, body)
+
+    reply_text = gemini_service.generate_reply(
+        system_prompt=system_prompt_effective,
+        chat_history=chat_history,
+    )
+    conversation_memory.add_message(clinic_id, from_number, "user", body)
+    conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+    return reply_text
 
 
 @app.post("/whatsapp", response_class=Response)
@@ -83,15 +148,13 @@ async def whatsapp_webhook(
         resp.message("Lo sentimos, no se encontró la clínica asociada. Verifica el enlace de WhatsApp.")
         return Response(content=str(resp), media_type="application/xml")
 
-    # Historial de chat: en este MVP usamos solo el último mensaje del usuario.
-    chat_history: List[Dict[str, str]] = [
-        {"role": "user", "content": f"De: {from_number}. Mensaje: {body}"}
-    ]
-
     try:
-        reply_text = gemini_service.generate_reply(
+        reply_text = _generate_and_persist_reply(
+            clinic_id=clinic_id,
+            from_number=from_number,
+            body=body,
             system_prompt=clinic.system_prompt,
-            chat_history=chat_history,
+            clinic_name=clinic.name,
         )
     except GeminiServiceError:
         resp = MessagingResponse()
@@ -119,4 +182,39 @@ async def whatsapp_webhook(
 async def healthcheck() -> Response:
     """Sencillo healthcheck para verificar que la app está viva."""
     return Response(content="OK", media_type="text/plain")
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat_json(
+    clinic_id: str = Query(..., description="Identificador de la clínica (?clinic_id=xxx)"),
+    payload: ChatRequest | None = None,
+) -> ChatResponse:
+    """
+    JSON endpoint to simulate the WhatsApp flow for local testing.
+    Same logic as /whatsapp but accepts JSON and returns JSON (no TwiML).
+    """
+    if payload is None:
+        payload = ChatRequest(from_number="", body="")
+    clinic = CLINICS_BY_ID.get(clinic_id)
+    if clinic is None:
+        return ChatResponse(
+            reply="Lo sentimos, no se encontró la clínica asociada. Verifica el enlace."
+        )
+    try:
+        reply_text = _generate_and_persist_reply(
+            clinic_id=clinic_id,
+            from_number=payload.from_number,
+            body=payload.body,
+            system_prompt=clinic.system_prompt,
+            clinic_name=clinic.name,
+        )
+    except GeminiServiceError:
+        return ChatResponse(
+            reply="Ha ocurrido un problema temporal al procesar tu mensaje. Inténtalo de nuevo más tarde."
+        )
+    except Exception:
+        return ChatResponse(
+            reply="Ha ocurrido un error inesperado. Si persiste, contacta con la clínica por teléfono."
+        )
+    return ChatResponse(reply=reply_text)
 

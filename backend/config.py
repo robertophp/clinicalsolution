@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     LOCATION: str = "us-central1"
     TWILIO_AUTH: Optional[str] = None
 
+    # Conversation memory (Firestore)
+    CONVERSATION_TTL_MINUTES: int = 30  # Messages older than this are not used as context (inactivity)
+    CONVERSATION_MAX_HISTORY: int = 5   # Max messages to send to Gemini as context
+    CONVERSATION_MAX_STORED: int = 20   # Max messages to keep per user per clinic (trim older)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -81,12 +81,23 @@ class GeminiService:
 
     @staticmethod
     def _build_prompt(system_prompt: str, history_text: str) -> str:
-        """Construye un prompt único para enviar a Gemini."""
-        base = f"Sistema (instrucciones):\n{system_prompt.strip()}\n"
+        """
+        Construye el prompt: primero System Instruction (instrucciones de la clínica),
+        después el historial de mensajes. El orden es fijo para que Gemini priorice las instrucciones.
+        """
+        parts = [
+            "=== System Instruction (instrucciones de la clínica) ===",
+            system_prompt.strip(),
+            "",
+        ]
         if history_text:
-            base += f"\nHistorial de conversación:\n{history_text}\n"
-        base += "\nResponde como asistente para una clínica dental, en español, de forma clara y empática."
-        return base
+            parts.extend([
+                "=== Historial de conversación ===",
+                history_text,
+                "",
+            ])
+        parts.append("Responde como asistente para una clínica dental, en español, de forma clara y empática.")
+        return "\n".join(parts)
 
 
 __all__ = ["GeminiService", "GeminiServiceError"]
