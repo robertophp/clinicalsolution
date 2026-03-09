@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
+import sys
+import traceback
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -13,6 +16,14 @@ from .config import settings
 from .services.gemini_service import GeminiService, GeminiServiceError
 from .services.conversation_memory import ConversationMemoryService
 
+# Asegurar que los logs (y tracebacks) se vean en la consola de uvicorn
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s [%(name)s] %(message)s",
+    stream=sys.stderr,
+    force=True,
+)
+
 app = FastAPI(title="Clinica Assistant Agent", version="0.1.0")
 
 
@@ -20,6 +31,7 @@ class ClinicConfig(BaseModel):
     id: str
     name: str
     system_prompt: str
+    assistant_name: str = "Asistente Virtual"  # Nombre con el que se presenta el bot
 
 
 class ChatRequest(BaseModel):
@@ -97,6 +109,7 @@ def _generate_and_persist_reply(
     body: str,
     system_prompt: str,
     clinic_name: str,
+    assistant_name: str = "Asistente Virtual",
 ) -> str:
     """
     Recupera historial, construye system instruction (clínica + primer mensaje vs conversacional),
@@ -105,10 +118,19 @@ def _generate_and_persist_reply(
     history = conversation_memory.get_recent_messages(clinic_id, from_number)
     is_first_message = len(history) == 0
 
+    # Siempre incluir nombre y clínica en el contexto para que el asistente responda correctamente en cualquier turno
+    identity_line = (
+        f"\n\n[Datos del asistente: Tu nombre es {assistant_name}. Trabajas para la clínica {clinic_name}. "
+        f"Cuando te pregunten cómo te llamas, quién eres o con quién hablan, responde siempre con el nombre {assistant_name}.]\n"
+        "\n[Idioma: Responde siempre en el mismo idioma en que el usuario te escribe. "
+        "Si escribe en español, responde en español; si escribe en inglés, responde en inglés; y así con cualquier otro idioma.]\n"
+    )
+
     if is_first_message:
         extra_instruction = (
             "\n\n[Instrucción para esta respuesta: Es el primer mensaje del usuario. "
-            f"Preséntate formalmente con el nombre de la clínica ({clinic_name}).]"
+            f"Preséntate diciendo que te llamas {assistant_name} y que eres el asistente de {clinic_name}. "
+            "Nunca uses placeholders como [Tu nombre]; usa siempre el nombre del asistente indicado.]"
         )
     else:
         extra_instruction = (
@@ -116,7 +138,7 @@ def _generate_and_persist_reply(
             "Sé directa y conversacional.]"
         )
 
-    system_prompt_effective = system_prompt.strip() + extra_instruction
+    system_prompt_effective = system_prompt.strip() + identity_line + extra_instruction
     chat_history = _build_chat_history_with_memory(clinic_id, from_number, body)
 
     reply_text = gemini_service.generate_reply(
@@ -155,8 +177,10 @@ async def whatsapp_webhook(
             body=body,
             system_prompt=clinic.system_prompt,
             clinic_name=clinic.name,
+            assistant_name=clinic.assistant_name,
         )
-    except GeminiServiceError:
+    except GeminiServiceError as e:
+        logging.warning("GeminiServiceError in /whatsapp: %s", e)
         resp = MessagingResponse()
         resp.message(
             "Ha ocurrido un problema temporal al procesar tu mensaje. "
@@ -164,7 +188,8 @@ async def whatsapp_webhook(
         )
         return Response(content=str(resp), media_type="application/xml")
     except Exception:
-        # Fallback genérico por seguridad.
+        logging.exception("Error inesperado en webhook /whatsapp")
+        traceback.print_exc(file=sys.stderr)
         resp = MessagingResponse()
         resp.message(
             "Ha ocurrido un error inesperado al procesar tu mensaje. "
@@ -182,6 +207,39 @@ async def whatsapp_webhook(
 async def healthcheck() -> Response:
     """Sencillo healthcheck para verificar que la app está viva."""
     return Response(content="OK", media_type="text/plain")
+
+
+@app.get("/health/gcp")
+async def healthcheck_gcp() -> dict:
+    """
+    Diagnóstico de configuración GCP: credenciales, Firestore y Vertex AI (Gemini).
+    Útil para ver qué falla antes de probar por WhatsApp.
+    """
+    result: dict = {
+        "config": {"project_id": settings.PROJECT_ID, "location": settings.LOCATION},
+        "firestore": None,
+        "gemini": None,
+    }
+
+    # Probar Firestore (solo lectura de un doc de prueba)
+    try:
+        conversation_memory.get_recent_messages("_health_check", "+0000000000")
+        result["firestore"] = "ok"
+    except Exception as e:  # noqa: BLE001
+        result["firestore"] = f"error: {type(e).__name__}: {e}"
+
+    # Probar Gemini (una llamada mínima)
+    try:
+        reply = gemini_service.generate_reply(
+            system_prompt="Eres un asistente. Responde solo: OK.",
+            chat_history=[{"role": "user", "content": "Di hola"}],
+            max_output_tokens=10,
+        )
+        result["gemini"] = "ok" if reply else "empty_response"
+    except Exception as e:  # noqa: BLE001
+        result["gemini"] = f"error: {type(e).__name__}: {e}"
+
+    return result
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -207,12 +265,16 @@ async def chat_json(
             body=payload.body,
             system_prompt=clinic.system_prompt,
             clinic_name=clinic.name,
+            assistant_name=clinic.assistant_name,
         )
-    except GeminiServiceError:
+    except GeminiServiceError as e:
+        logging.warning("GeminiServiceError in /chat: %s", e)
         return ChatResponse(
             reply="Ha ocurrido un problema temporal al procesar tu mensaje. Inténtalo de nuevo más tarde."
         )
     except Exception:
+        logging.exception("Error inesperado en endpoint /chat")
+        traceback.print_exc(file=sys.stderr)
         return ChatResponse(
             reply="Ha ocurrido un error inesperado. Si persiste, contacta con la clínica por teléfono."
         )

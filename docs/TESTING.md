@@ -56,12 +56,40 @@ curl -X POST "http://localhost:8000/chat?clinic_id=demo_clinic_1" ^
 
 Response is JSON, e.g. `{"reply": "..."}`.
 
-### 4. Test with real WhatsApp (Twilio + ngrok)
+### 4. Test with real WhatsApp (Twilio + tunnel)
 
-1. Install [ngrok](https://ngrok.com/) and run: `ngrok http 8000`
-2. In Twilio Console → WhatsApp Sandbox (or your number) → set webhook to:  
-   `https://YOUR_NGROK_URL/whatsapp?clinic_id=demo_clinic_1`
-3. Send a WhatsApp message to your Twilio number; the agent reply should appear in WhatsApp.
+Your app runs on `localhost:8000`; Twilio needs a **public HTTPS URL** to call your webhook. Use a tunnel:
+
+#### Option A: ngrok (recommended, requires free account)
+
+Ngrok now requires a verified account and authtoken:
+
+1. **Sign up:** [https://dashboard.ngrok.com/signup](https://dashboard.ngrok.com/signup)
+2. **Get your authtoken:** [https://dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken)
+3. **Configure ngrok once** (replace `YOUR_TOKEN` with the token from step 2):
+   ```powershell
+   ngrok config add-authtoken YOUR_TOKEN
+   ```
+4. **Start the tunnel** (with your app already running on port 8000):
+   ```powershell
+   ngrok http 8000
+   ```
+5. Copy the **HTTPS** URL (e.g. `https://a1b2c3.ngrok-free.app`) and in **Twilio Console** → Messaging → WhatsApp Sandbox → “When a message comes in” set:
+   ```
+   https://YOUR_NGROK_URL/whatsapp?clinic_id=demo_clinic_1
+   ```
+   Method: **POST**.
+6. Send a WhatsApp message to your Twilio sandbox number; the reply will come from your app.
+
+#### Option B: localtunnel (no account, good for quick tests)
+
+If you have Node.js/npx:
+
+```powershell
+npx localtunnel --port 8000
+```
+
+Use the printed URL (e.g. `https://something.loca.lt`) in Twilio the same way as with ngrok. Some networks or Twilio regions may work better with ngrok.
 
 ### 5. Automated tests (pytest)
 

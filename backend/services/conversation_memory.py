@@ -55,7 +55,8 @@ class ConversationMemoryService:
     @property
     def _db(self) -> firestore.Client:
         if self._client is None:
-            self._client = firestore.Client(project=self._project_id)
+            database_id = getattr(settings, "FIRESTORE_DATABASE_ID", None) or "(default)"
+            self._client = firestore.Client(project=self._project_id, database=database_id)
         return self._client
 
     def get_recent_messages(

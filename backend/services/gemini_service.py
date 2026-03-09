@@ -19,7 +19,7 @@ class GeminiService:
         self,
         project_id: str | None = None,
         location: str | None = None,
-        model_name: str = "gemini-1.5-flash",
+        model_name: str = "gemini-2.0-flash-001",
     ) -> None:
         self._project_id = project_id or settings.PROJECT_ID
         self._location = location or settings.LOCATION
@@ -58,7 +58,9 @@ class GeminiService:
             )
             response = self._model.generate_content(prompt, generation_config=config)
         except Exception as exc:  # noqa: BLE001
-            raise GeminiServiceError("Error generando contenido con Gemini.") from exc
+            raise GeminiServiceError(
+                f"Error generando contenido con Gemini: {type(exc).__name__}: {exc}"
+            ) from exc
 
         text = getattr(response, "text", None)
         if not text:
@@ -96,7 +98,10 @@ class GeminiService:
                 history_text,
                 "",
             ])
-        parts.append("Responde como asistente para una clínica dental, en español, de forma clara y empática.")
+        parts.append(
+            "Responde como asistente para una clínica dental, de forma clara y empática, "
+            "en el mismo idioma en que te escriba el usuario."
+        )
         return "\n".join(parts)
 
 
