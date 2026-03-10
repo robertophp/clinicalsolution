@@ -91,6 +91,25 @@ class ConversationMemoryService:
             if (m.get("content") or "").strip()
         ]
 
+    def get_metadata(
+        self,
+        clinic_id: str,
+        from_number: str,
+    ) -> dict[str, Any]:
+        """Return lightweight metadata for this conversation (e.g. language, updated_at)."""
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        doc = doc_ref.get()
+        if not doc or not doc.exists:
+            return {}
+
+        data = doc.to_dict() or {}
+        metadata: dict[str, Any] = {}
+        if "conversation_language" in data:
+            metadata["conversation_language"] = data.get("conversation_language")
+        if "updated_at" in data:
+            metadata["updated_at"] = _parse_timestamp(data.get("updated_at"))
+        return metadata
+
     def add_message(
         self,
         clinic_id: str,
@@ -129,6 +148,29 @@ class ConversationMemoryService:
             "clinic_id": clinic_id,
             "from_number": from_number,
         }, merge=True)
+
+    def set_conversation_language(
+        self,
+        clinic_id: str,
+        from_number: str,
+        language: str,
+    ) -> None:
+        """Persist the detected conversation language (e.g. 'es' or 'en') for this user/clinic."""
+        if not language:
+            return
+
+        coll = self._db.collection(COLLECTION_NAME)
+        doc_ref = coll.document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "conversation_language": language,
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
 
 
 __all__ = ["ConversationMemoryService", "COLLECTION_NAME"]

@@ -6,10 +6,12 @@ pydantic>=2.6.0
 pydantic-settings>=2.2.0
 
 SQLAlchemy>=2.0.0
-pybigquery
+sqlalchemy-bigquery>=1.11.0
 
 google-cloud-aiplatform>=1.67.0
 google-cloud-firestore>=2.16.0
 
 twilio>=9.0.0
+
+langdetect>=1.0.9
 

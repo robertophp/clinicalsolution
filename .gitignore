@@ -5,6 +5,9 @@ key.json
 .env.*.local
 *.pem
 
+# Debug / logs (instrumentación, sesiones)
+debug-*.log
+
 # Python
 .venv/
 venv/
