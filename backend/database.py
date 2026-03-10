@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Generator
 
-from sqlalchemy import Column, DateTime, Integer, String, func, create_engine
+from sqlalchemy import Column, Date, String, Time, create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy_bigquery import TIMESTAMP
 
 from .config import settings
 
@@ -16,7 +17,11 @@ class Base(DeclarativeBase):
 
 def _create_engine() -> Engine:
     """Create a SQLAlchemy engine for BigQuery."""
-    database_url = f"bigquery://{settings.PROJECT_ID}"
+    dataset = getattr(settings, "BIGQUERY_DATASET", None)
+    if dataset:
+        database_url = f"bigquery://{settings.PROJECT_ID}/{dataset}"
+    else:
+        database_url = f"bigquery://{settings.PROJECT_ID}"
     return create_engine(database_url)
 
 
@@ -30,20 +35,23 @@ SessionLocal = sessionmaker(
 
 
 class Cita(Base):
-    """Modelo de cita para almacenar reservas de pacientes."""
-
+    """
+    Modelo de cita para almacenar reservas en BigQuery (clinica_datos.citas).
+    Nombres de columna alineados con el esquema real de la tabla.
+    """
     __tablename__ = "citas"
 
-    id: int = Column(Integer, primary_key=True, autoincrement=True)
-    clinic_id: str = Column(String(255), nullable=False, index=True)
-    paciente_nombre: str = Column(String(255), nullable=False)
-    telefono: str = Column(String(50), nullable=False)
-    sintoma: str = Column(String(500), nullable=True)
-    fecha_cita: datetime = Column(DateTime(timezone=False), nullable=False)
+    paciente_nombre: str = Column("paciente_nombre", String(255), nullable=True)
+    telefono: str = Column("telefono", String(255), nullable=True)
+    fecha_cita = Column("fecha_cita", Date(), nullable=True)
+    hora_cita = Column("hora_cita", Time(), nullable=True)
+    clinic_id: str = Column("clinica_id", String(255), nullable=True)
+    status: str = Column("status", String(64), nullable=True)
     timestamp: datetime = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
+        "creado_en",
+        TIMESTAMP(timezone=True),
+        nullable=True,
+        primary_key=True,
     )
 
 

@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # Si creaste una base de datos Firestore con nombre (ej. "agentmemory"), pon su ID aquí. Si usas la base por defecto, déjalo vacío.
     FIRESTORE_DATABASE_ID: Optional[str] = None
 
+    # BigQuery: dataset donde está la tabla citas (ej. clinica_datos.citas)
+    BIGQUERY_DATASET: str = "clinica_datos"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

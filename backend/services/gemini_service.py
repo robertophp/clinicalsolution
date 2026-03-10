@@ -1,11 +1,43 @@
 from __future__ import annotations
 
-from typing import Iterable, Mapping, Sequence
+import json
+import time
+from typing import Callable, Iterable, Mapping, Sequence
 
 import vertexai
-from vertexai.generative_models import GenerationConfig, GenerativeModel
+from vertexai.generative_models import (
+    Content,
+    FunctionDeclaration,
+    GenerationConfig,
+    GenerativeModel,
+    Part,
+    Tool,
+)
 
 from ..config import settings
+
+
+# Herramienta agendar_cita para Gemini (function calling)
+# clinica_id se inyecta desde el contexto (webhook); no se pide al usuario.
+AGENDAR_CITA_DECLARATION = FunctionDeclaration(
+    name="agendar_cita",
+    description=(
+        "Agenda una cita en la clínica actual (la del contexto de la conversación) cuando el usuario confirme nombre, fecha y hora. "
+        "Solo llama esta función cuando el paciente haya confirmado explícitamente nombre, fecha y hora. "
+        "La fecha y hora deben pasarse en formato normalizado: fecha como YYYY-MM-DD y hora como HH:MM (ej. 14:30)."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "nombre": {"type": "string", "description": "Nombre completo del paciente"},
+            "fecha": {"type": "string", "description": "Fecha de la cita en formato YYYY-MM-DD (ej. 2025-03-15). Debes convertir fechas en lenguaje natural a este formato."},
+            "hora": {"type": "string", "description": "Hora de la cita en formato HH:MM (ej. 10:00 o 14:30). Debes convertir horas en lenguaje natural a este formato."},
+        },
+        "required": ["nombre", "fecha", "hora"],
+    },
+)
+
+AGENDAR_CITA_TOOL = Tool(function_declarations=[AGENDAR_CITA_DECLARATION])
 
 
 class GeminiServiceError(Exception):
@@ -68,6 +100,78 @@ class GeminiService:
 
         return text.strip()
 
+    def generate_reply_with_tools(
+        self,
+        system_prompt: str,
+        chat_history: Sequence[Mapping[str, str]] | None = None,
+        *,
+        tool_handler: Callable[[str, dict], dict],
+        temperature: float = 0.3,
+        max_output_tokens: int = 512,
+        max_tool_rounds: int = 3,
+    ) -> str:
+        """
+        Genera respuesta usando herramientas (function calling).
+        Si el modelo devuelve function_calls, se invoca tool_handler(name, args) y se reenvía
+        el resultado a Gemini para obtener el texto final.
+        """
+        if self._model is None:
+            raise GeminiServiceError("Modelo Gemini no inicializado.")
+
+        history_text = self._format_history(chat_history or [])
+        # #region agent log
+        try:
+            with open("debug-84132f.log", "a", encoding="utf-8") as _f:
+                _f.write(json.dumps({"sessionId":"84132f","runId":"post-fix","hypothesisId":"A","location":"gemini_service.py:after_format_history","message":"_format_history ok","data":{"history_len":len(chat_history or [])},"timestamp":round(time.time()*1000)}) + "\n")
+        except Exception:
+            pass
+        # #endregion
+        prompt = self._build_prompt(system_prompt=system_prompt, history_text=history_text)
+        config = GenerationConfig(
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+
+        contents = [Content(role="user", parts=[Part.from_text(prompt)])]
+        used_tools = 0
+
+        while used_tools < max_tool_rounds:
+            try:
+                response = self._model.generate_content(
+                    contents,
+                    tools=[AGENDAR_CITA_TOOL],
+                    generation_config=config,
+                )
+            except Exception as exc:
+                raise GeminiServiceError(
+                    f"Error generando contenido con Gemini: {type(exc).__name__}: {exc}"
+                ) from exc
+
+            if not response.candidates:
+                raise GeminiServiceError("Gemini devolvió una respuesta vacía.")
+
+            candidate = response.candidates[0]
+            fc_list = getattr(candidate, "function_calls", None) or []
+
+            if not fc_list:
+                text = getattr(response, "text", None)
+                if not text:
+                    raise GeminiServiceError("Gemini devolvió una respuesta vacía.")
+                return text.strip()
+
+            used_tools += 1
+            response_parts = []
+            for fc in fc_list:
+                name = getattr(fc, "name", None) or ""
+                args = dict(getattr(fc, "args", None) or {})
+                result = tool_handler(name, args)
+                response_parts.append(Part.from_function_response(name=name, response=result))
+
+            contents.append(Content(role="model", parts=candidate.content.parts))
+            contents.append(Content(role="user", parts=response_parts))
+
+        raise GeminiServiceError("Se excedió el número máximo de rondas de herramientas.")
+    # #region agent log
     @staticmethod
     def _format_history(chat_history: Iterable[Mapping[str, str]]) -> str:
         """Convierte el historial de chat en texto plano estructurado."""
