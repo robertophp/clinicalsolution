@@ -45,6 +45,7 @@ class Cita(Base):
     telefono: str = Column("telefono", String(255), nullable=True)
     fecha_cita = Column("fecha_cita", Date(), nullable=True)
     hora_cita = Column("hora_cita", Time(), nullable=True)
+    razon_cita: str = Column("razon_cita", String(255), nullable=True)  # tipo de servicio / razón de la cita
     clinic_id: str = Column("clinica_id", String(255), nullable=True)
     status: str = Column("status", String(64), nullable=True)
     timestamp: datetime = Column(

@@ -1,0 +1,74 @@
+{
+  "services": [
+    {
+      "id": "limpieza",
+      "name": "Limpieza dental",
+      "name_en": "Teeth cleaning",
+      "description": "Profilaxis o limpieza de dientes para remover placa y sarro.",
+      "price": "25.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": ["limpieza", "limpieza de dientes", "profilaxis", "teeth cleaning", "dental cleaning", "limpieza dental"]
+    },
+    {
+      "id": "revision",
+      "name": "Revisión general",
+      "name_en": "General check-up",
+      "description": "Revisión general bucal para evaluación del estado de dientes y encías.",
+      "price": "15.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": ["revisión", "revision", "consulta", "check-up", "chequeo", "general check-up"]
+    },
+    {
+      "id": "extraccion",
+      "name": "Extracción dental",
+      "name_en": "Tooth extraction",
+      "description": "Extracción de pieza dental (simple o quirúrgica según caso).",
+      "price": "45.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": ["extracción", "extraccion", "sacar muela", "tooth extraction", "pull tooth"]
+    },
+    {
+      "id": "obturación",
+      "name": "Obturación (calza)",
+      "name_en": "Dental filling",
+      "description": "Tratamiento de caries con resina o amalgama.",
+      "price": "35.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": ["obturación", "obturacion", "calza", "filling", "caries", "relleno"]
+    },
+    {
+      "id": "blanqueamiento",
+      "name": "Blanqueamiento dental",
+      "name_en": "Teeth whitening",
+      "description": "Tratamiento para aclarar el color de los dientes.",
+      "price": "80.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": ["blanqueamiento", "blanquear", "whitening", "teeth whitening"]
+    },
+    {
+      "id": "ortodoncia_consulta",
+      "name": "Consulta de ortodoncia",
+      "name_en": "Orthodontics consultation",
+      "description": "Evaluación para brackets o alineadores.",
+      "price": "20.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": ["ortodoncia", "brackets", "frenos", "orthodontics", "consulta ortodoncia"]
+    },
+    {
+      "id": "emergencia",
+      "name": "Consulta de emergencia",
+      "name_en": "Emergency visit",
+      "description": "Atención por dolor agudo o urgencia dental.",
+      "price": "40.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": ["emergencia", "dolor", "urgencia", "emergency", "pain"]
+    }
+  ]
+}

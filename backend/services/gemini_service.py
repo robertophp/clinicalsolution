@@ -22,9 +22,11 @@ from ..config import settings
 AGENDAR_CITA_DECLARATION = FunctionDeclaration(
     name="agendar_cita",
     description=(
-        "Agenda una cita en la clínica actual (la del contexto de la conversación) cuando el usuario confirme nombre, fecha y hora. "
-        "Solo llama esta función cuando el paciente haya confirmado explícitamente nombre, fecha y hora. "
-        "La fecha y hora deben pasarse en formato normalizado: fecha como YYYY-MM-DD y hora como HH:MM (ej. 14:30)."
+        "Agenda una cita en la clínica actual (la del contexto de la conversación) cuando el usuario confirme nombre, fecha, hora y tipo de servicio. "
+        "Solo llama esta función cuando el paciente haya confirmado explícitamente nombre, fecha, hora y servicio (o razón de la cita). "
+        "La fecha y hora deben pasarse en formato normalizado: fecha como YYYY-MM-DD y hora como HH:MM (ej. 14:30). "
+        "El parámetro 'servicio' debe ser el ID del servicio según el catálogo de servicios que tienes en contexto (ej. limpieza, revision, extraccion). "
+        "Si el usuario pregunta por precios, responde con la información del catálogo sin llamar esta función."
     ),
     parameters={
         "type": "object",
@@ -32,11 +34,50 @@ AGENDAR_CITA_DECLARATION = FunctionDeclaration(
             "nombre": {"type": "string", "description": "Nombre completo del paciente"},
             "fecha": {"type": "string", "description": "Fecha de la cita en formato YYYY-MM-DD (ej. 2025-03-15). Debes convertir fechas en lenguaje natural a este formato."},
             "hora": {"type": "string", "description": "Hora de la cita en formato HH:MM (ej. 10:00 o 14:30). Debes convertir horas en lenguaje natural a este formato."},
+            "servicio": {"type": "string", "description": "ID del servicio según el catálogo de servicios (ej. limpieza, revision, extraccion, obturacion, blanqueamiento, ortodoncia_consulta, emergencia). Debe coincidir con uno de los IDs del catálogo. Si el usuario no ha indicado el tipo de cita, pregúntale antes de agendar."},
         },
-        "required": ["nombre", "fecha", "hora"],
+        "required": ["nombre", "fecha", "hora", "servicio"],
     },
 )
 
+# Cancelar la cita activa del paciente (mismo teléfono y clínica del contexto).
+CANCELAR_CITA_DECLARATION = FunctionDeclaration(
+    name="cancelar_cita",
+    description=(
+        "Cancela la cita activa del paciente cuando él lo pida explícitamente (ej. 'quiero cancelar mi cita', 'cancela mi reserva'). "
+        "Solo llama esta función cuando el usuario confirme que quiere cancelar. No tiene parámetros: la cita se identifica por el teléfono y la clínica del contexto."
+    ),
+    parameters={"type": "object", "properties": {}},
+)
+
+# Reagendar: marca la cita activa actual como reagendada y crea una nueva con la nueva fecha/hora.
+REAGENDAR_CITA_DECLARATION = FunctionDeclaration(
+    name="reagendar_cita",
+    description=(
+        "Reagenda la cita activa del paciente a una nueva fecha y hora cuando él lo pida (ej. 'quiero cambiar mi cita al viernes', 'reagendar para mañana a las 10'). "
+        "La cita actual se marca como reagendada y se crea una nueva cita activa. Fecha en YYYY-MM-DD y hora en HH:MM. "
+        "Si no indica tipo de servicio, usa el mismo de la cita actual."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "fecha": {"type": "string", "description": "Nueva fecha en YYYY-MM-DD"},
+            "hora": {"type": "string", "description": "Nueva hora en HH:MM (ej. 10:00 o 14:30)"},
+            "servicio": {"type": "string", "description": "ID del servicio (ej. limpieza, revision). Opcional; si no se indica, se conserva el de la cita actual."},
+        },
+        "required": ["fecha", "hora"],
+    },
+)
+
+CITAS_TOOLS = Tool(
+    function_declarations=[
+        AGENDAR_CITA_DECLARATION,
+        CANCELAR_CITA_DECLARATION,
+        REAGENDAR_CITA_DECLARATION,
+    ]
+)
+
+# Compatibilidad: herramienta solo agendar (por si se usa en otro flujo).
 AGENDAR_CITA_TOOL = Tool(function_declarations=[AGENDAR_CITA_DECLARATION])
 
 
@@ -139,7 +180,7 @@ class GeminiService:
             try:
                 response = self._model.generate_content(
                     contents,
-                    tools=[AGENDAR_CITA_TOOL],
+                    tools=[CITAS_TOOLS],
                     generation_config=config,
                 )
             except Exception as exc:

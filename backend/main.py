@@ -17,7 +17,14 @@ from twilio.twiml.messaging_response import MessagingResponse
 
 from .config import settings
 from .database import SessionLocal
-from .repositories import create_cita
+from .repositories import (
+    CITA_STATUS_CANCELADA,
+    CITA_STATUS_REAGENDADA,
+    create_cita,
+    get_latest_activa_cita_for_phone,
+    get_latest_cita_for_phone,
+    update_cita_status,
+)
 from .services.gemini_service import GeminiService, GeminiServiceError
 from .services.conversation_memory import ConversationMemoryService
 
@@ -38,6 +45,7 @@ class ClinicConfig(BaseModel):
     system_prompt: str  # Prompt base en español
     system_prompt_en: str | None = None  # Prompt equivalente en inglés (opcional)
     assistant_name: str = "Asistente Virtual"  # Nombre con el que se presenta el bot
+    opening_hours: Dict[str, Any] | None = None  # Horarios de atención por bloque (ej. mon_fri, sat)
 
 
 class ChatRequest(BaseModel):
@@ -107,12 +115,105 @@ def _load_clinics_config(path: Path) -> Dict[str, ClinicConfig]:
 
 BASE_DIR = Path(__file__).resolve().parent
 CLINICS_FILE = BASE_DIR / "data" / "clinics_mock.json"
+SERVICES_CATALOG_FILE = BASE_DIR / "data" / "services_catalog.json"
 
 try:
     CLINICS_BY_ID = _load_clinics_config(CLINICS_FILE)
 except Exception as exc:  # noqa: BLE001
     # En un contexto real se podría loggear y dejar que la app falle en el healthcheck.
     raise RuntimeError("Error cargando la configuración de clínicas.") from exc
+
+
+def _format_opening_hours_for_prompt(clinic: ClinicConfig, language: str) -> str:
+    """Formatea los horarios de atención de la clínica para el prompt (ES/EN)."""
+    opening_hours = getattr(clinic, "opening_hours", None) or {}
+    if not opening_hours:
+        return ""
+
+    def _days_label(days: list[str]) -> str:
+        mapping_es = {
+            "mon": "lunes",
+            "tue": "martes",
+            "wed": "miércoles",
+            "thu": "jueves",
+            "fri": "viernes",
+            "sat": "sábado",
+            "sun": "domingo",
+        }
+        mapping_en = {
+            "mon": "Monday",
+            "tue": "Tuesday",
+            "wed": "Wednesday",
+            "thu": "Thursday",
+            "fri": "Friday",
+            "sat": "Saturday",
+            "sun": "Sunday",
+        }
+        mapping = mapping_en if language == "en" else mapping_es
+        return ", ".join(mapping.get(d, d) for d in days)
+
+    if language == "en":
+        lines: list[str] = ["\n\n[OPENING HOURS of the clinic:]"]
+    else:
+        lines = ["\n\n[HORARIO DE ATENCIÓN de la clínica:]"]
+
+    # opening_hours es un dict de bloques (mon_fri, sat, etc.)
+    for block in opening_hours.values():
+        days = block.get("days", [])
+        start = block.get("from")
+        end = block.get("to")
+        if not days or not start or not end:
+            continue
+        days_txt = _days_label(days)
+        if language == "en":
+            lines.append(f"- {days_txt}: from {start} to {end}")
+        else:
+            lines.append(f"- {days_txt}: de {start} a {end}")
+
+    return "\n".join(lines)
+
+
+def _load_services_catalog(path: Path) -> List[Dict[str, Any]]:
+    """Carga el catálogo de servicios desde JSON (id, name, price, status, aliases)."""
+    if not path.exists():
+        return []
+    try:
+        raw = path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        return data.get("services", [])
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _format_services_catalog_for_prompt(services: List[Dict[str, Any]], language: str) -> str:
+    """Formatea el catálogo de servicios para inyectarlo en el system prompt (ES/EN)."""
+    if not services:
+        return ""
+    lines = [
+        "\n\n[CATÁLOGO DE SERVICIOS – Usa el 'id' cuando agendes una cita o cuando el usuario pregunte por precios.]",
+        "Servicios disponibles (id | nombre | precio | estado):",
+    ]
+    if language == "en":
+        lines[0] = "\n\n[SERVICES CATALOG – Use the 'id' when booking an appointment or when the user asks for prices.]"
+        lines[1] = "Available services (id | name | price | status):"
+    for s in services:
+        sid = s.get("id", "")
+        name = s.get("name_en", s.get("name", "")) if language == "en" else s.get("name", s.get("name_en", ""))
+        price = s.get("price", "")
+        currency = s.get("currency", "USD")
+        status = s.get("status", "available")
+        status_label = "available" if status == "available" else status
+        lines.append(f"  - id: {sid} | {name} | {currency} {price} | {status_label}")
+    lines.append("Si el usuario pregunta cuánto cuesta algo o por precios, responde con estos datos. Si no indica el tipo de cita al agendar, pregúntale antes de usar la herramienta.")
+    if language == "en":
+        lines[-1] = "If the user asks how much something costs or for prices, answer using this list. If they don't specify the type of appointment when booking, ask before calling the tool."
+    return "\n".join(lines)
+
+
+try:
+    _SERVICES_RAW = _load_services_catalog(SERVICES_CATALOG_FILE)
+except Exception:  # noqa: BLE001
+    _SERVICES_RAW = []
 
 
 gemini_service = GeminiService(
@@ -145,12 +246,52 @@ def _handle_agendar_cita(from_number: str, clinic_id: str, language: str, args: 
     nombre = (args.get("nombre") or "").strip()
     fecha = (args.get("fecha") or "").strip()
     hora = (args.get("hora") or "").strip()
-    if not all([nombre, fecha, hora]):
+    servicio = (args.get("servicio") or "").strip()
+    if not all([nombre, fecha, hora, servicio]):
         if language == "en":
-            msg = "I couldn't schedule the appointment: name, date or time are missing. Please confirm all details."
+            msg = "I couldn't schedule the appointment: name, date, time or service type are missing. Please confirm all details, including the type of appointment (e.g. cleaning, check-up)."
         else:
-            msg = "No pude agendar la cita: faltan nombre, fecha u hora. Por favor confirma todos los datos."
+            msg = "No pude agendar la cita: faltan nombre, fecha, hora o tipo de servicio. Por favor confirma todos los datos, incluyendo el tipo de cita (ej. limpieza, revisión)."
         return {"error": "Faltan datos", "mensaje": msg}
+
+    # Si el nombre recibido es solo el primer nombre del mismo paciente, usar nombre completo: primero de metadata (Firestore), y si no hay nombre completo ahí, de la última cita en BigQuery.
+    first_word = nombre.split()[0] if nombre.split() else nombre
+    first_word_norm = first_word[:1].upper() + first_word[1:].lower() if first_word else ""
+    use_full_name: str | None = None
+
+    metadata = conversation_memory.get_metadata(clinic_id, from_number) or {}
+    if isinstance(metadata, dict):
+        stored_full_name = (metadata.get("patient_name") or "").strip()
+        stored_first = (metadata.get("patient_first_name") or "").strip()
+        if stored_full_name and stored_first and first_word_norm == stored_first and len(stored_full_name.split()) > 1:
+            use_full_name = stored_full_name
+
+    if use_full_name is None and first_word_norm:
+        try:
+            db_bq = SessionLocal()
+            try:
+                cita_prev = get_latest_cita_for_phone(db_bq, clinic_id=clinic_id, telefono=from_number)
+                if cita_prev and (cita_prev.paciente_nombre or "").strip():
+                    full_bq = cita_prev.paciente_nombre.strip()
+                    parts_bq = full_bq.split()
+                    first_bq = parts_bq[0][:1].upper() + parts_bq[0][1:].lower() if parts_bq else ""
+                    if first_bq == first_word_norm and len(parts_bq) > 1:
+                        use_full_name = full_bq
+            finally:
+                db_bq.close()
+        except Exception:
+            pass
+
+    if use_full_name:
+        nombre = use_full_name
+
+    # Persistir nombre del paciente para saludos futuros
+    try:
+        conversation_memory.set_patient_name(clinic_id, from_number, nombre)
+    except Exception:
+        # No interrumpir el flujo de cita si falla la escritura de metadatos
+        pass
+
     db = SessionLocal()
     try:
         create_cita(
@@ -160,6 +301,7 @@ def _handle_agendar_cita(from_number: str, clinic_id: str, language: str, args: 
             telefono=from_number or "Sin teléfono",
             fecha=fecha,
             hora=hora,
+            razon_cita=servicio,
         )
         # #region agent log
         try:
@@ -169,9 +311,9 @@ def _handle_agendar_cita(from_number: str, clinic_id: str, language: str, args: 
             pass
         # #endregion
         if language == "en":
-            mensaje = f"Done! I've scheduled your appointment for {fecha} at {hora}."
+            mensaje = f"Done! I've scheduled your appointment for {fecha} at {hora} (service: {servicio})."
         else:
-            mensaje = f"¡Listo! He agendado tu cita para el {fecha} a las {hora}."
+            mensaje = f"¡Listo! He agendado tu cita para el {fecha} a las {hora} (servicio: {servicio})."
         return {"mensaje": mensaje}
     except Exception as e:
         # #region agent log
@@ -186,6 +328,91 @@ def _handle_agendar_cita(from_number: str, clinic_id: str, language: str, args: 
             msg = "I couldn't schedule the appointment. Please try again or contact the clinic."
         else:
             msg = "No pude agendar la cita. Por favor intenta de nuevo o contacta a la clínica."
+        return {"error": str(e), "mensaje": msg}
+    finally:
+        db.close()
+
+
+def _handle_cancelar_cita(from_number: str, clinic_id: str, language: str) -> dict:
+    """
+    Cancela la cita activa del paciente (teléfono + clínica del contexto).
+    Devuelve mensaje de éxito o error para que Gemini lo use en la respuesta.
+    """
+    db = SessionLocal()
+    try:
+        cita = get_latest_activa_cita_for_phone(db, clinic_id=clinic_id, telefono=from_number)
+        if not cita:
+            if language == "en":
+                msg = "You don't have an active appointment to cancel. If you had one, it may already be cancelled or rescheduled."
+            else:
+                msg = "No tienes una cita activa que cancelar. Si tenías una, puede que ya esté cancelada o reagendada."
+            return {"error": "Sin cita activa", "mensaje": msg}
+        update_cita_status(db, cita, CITA_STATUS_CANCELADA)
+        if language == "en":
+            mensaje = "Your appointment has been cancelled. If you need a new one, just ask to schedule it."
+        else:
+            mensaje = "Tu cita ha sido cancelada. Si necesitas una nueva, solo pide agendar una."
+        return {"mensaje": mensaje}
+    except Exception as e:
+        logging.warning("Error cancelando cita: %s", e)
+        if language == "en":
+            msg = "I couldn't cancel the appointment. Please try again or contact the clinic."
+        else:
+            msg = "No pude cancelar la cita. Por favor intenta de nuevo o contacta a la clínica."
+        return {"error": str(e), "mensaje": msg}
+    finally:
+        db.close()
+
+
+def _handle_reagendar_cita(from_number: str, clinic_id: str, language: str, args: dict) -> dict:
+    """
+    Marca la cita activa actual como reagendada y crea una nueva con fecha/hora/servicio indicados.
+    Si no se pasa servicio, se usa el de la cita actual.
+    """
+    fecha = (args.get("fecha") or "").strip()
+    hora = (args.get("hora") or "").strip()
+    servicio = (args.get("servicio") or "").strip()
+    if not fecha or not hora:
+        if language == "en":
+            msg = "I need the new date and time to reschedule (e.g. 2025-03-15 and 10:00)."
+        else:
+            msg = "Necesito la nueva fecha y hora para reagendar (ej. 2025-03-15 y 10:00)."
+        return {"error": "Faltan fecha u hora", "mensaje": msg}
+
+    db = SessionLocal()
+    try:
+        cita_activa = get_latest_activa_cita_for_phone(db, clinic_id=clinic_id, telefono=from_number)
+        if not cita_activa:
+            if language == "en":
+                msg = "You don't have an active appointment to reschedule."
+            else:
+                msg = "No tienes una cita activa para reagendar."
+            return {"error": "Sin cita activa", "mensaje": msg}
+
+        nombre = (cita_activa.paciente_nombre or "").strip() or "Sin nombre"
+        razon = (servicio or (cita_activa.razon_cita or "").strip()) or None
+
+        update_cita_status(db, cita_activa, CITA_STATUS_REAGENDADA)
+        create_cita(
+            db,
+            clinic_id=clinic_id,
+            paciente_nombre=nombre,
+            telefono=from_number or "Sin teléfono",
+            fecha=fecha,
+            hora=hora,
+            razon_cita=razon or "revision",
+        )
+        if language == "en":
+            mensaje = f"Done! I've rescheduled your appointment to {fecha} at {hora}."
+        else:
+            mensaje = f"¡Listo! He reagendado tu cita para el {fecha} a las {hora}."
+        return {"mensaje": mensaje}
+    except Exception as e:
+        logging.warning("Error reagendando cita: %s", e)
+        if language == "en":
+            msg = "I couldn't reschedule the appointment. Please try again or contact the clinic."
+        else:
+            msg = "No pude reagendar la cita. Por favor intenta de nuevo o contacta a la clínica."
         return {"error": str(e), "mensaje": msg}
     finally:
         db.close()
@@ -207,11 +434,61 @@ def _generate_and_persist_reply(
     history = conversation_memory.get_recent_messages(clinic_id, from_number)
     is_first_message = len(history) == 0
 
+    # Metadata ligera: idioma de conversación y nombre del paciente (si ya se conoce)
+    metadata = conversation_memory.get_metadata(clinic_id, from_number) or {}
+    stored_first_name: str | None = None
+    if isinstance(metadata, dict):
+        stored_first_name = (metadata.get("patient_first_name") or None)  # Firestore
+
+    # Si no tenemos nombre en memoria pero ya existen citas previas en BigQuery,
+    # intentamos recuperar el nombre del paciente a partir del teléfono y la clínica.
+    if not stored_first_name:
+        try:
+            db = SessionLocal()
+            try:
+                cita = get_latest_cita_for_phone(db, clinic_id=clinic_id, telefono=from_number)
+            finally:
+                db.close()
+            if cita and (cita.paciente_nombre or "").strip():
+                full_name = cita.paciente_nombre.strip()
+                parts = full_name.split()
+                fn = parts[0] if parts else full_name
+                stored_first_name = fn[:1].upper() + fn[1:].lower()
+                # Persistir en memoria para futuros turnos
+                try:
+                    conversation_memory.set_patient_name(clinic_id, from_number, full_name)
+                except Exception:
+                    pass
+        except Exception:
+            # Si BigQuery falla, no rompemos el flujo de conversación.
+            stored_first_name = stored_first_name
+
+    # Si tenemos primer nombre pero no nombre completo (o solo una palabra), intentar obtener nombre completo de BigQuery para el prompt.
+    if stored_first_name and isinstance(metadata, dict):
+        stored_full = (metadata.get("patient_name") or "").strip()
+        if not stored_full or len(stored_full.split()) < 2:
+            try:
+                db = SessionLocal()
+                try:
+                    cita = get_latest_cita_for_phone(db, clinic_id=clinic_id, telefono=from_number)
+                    if cita and (cita.paciente_nombre or "").strip():
+                        full_bq = cita.paciente_nombre.strip()
+                        if len(full_bq.split()) > 1:
+                            metadata = dict(metadata) if metadata else {}
+                            metadata["patient_name"] = full_bq
+                            try:
+                                conversation_memory.set_patient_name(clinic_id, from_number, full_bq)
+                            except Exception:
+                                pass
+                finally:
+                    db.close()
+            except Exception:
+                pass
+
     # Idioma de la conversación: si hay historial reciente, reutilizamos el que haya en Firestore.
     # Si no hay historial (nueva sesión) o falta el dato, usamos langdetect y lo persistimos.
     language: str
     if not is_first_message:
-        metadata = conversation_memory.get_metadata(clinic_id, from_number) or {}
         if isinstance(metadata, dict):
             stored_lang = metadata.get("conversation_language")
         else:
@@ -242,12 +519,37 @@ def _generate_and_persist_reply(
         "Cuando el usuario diga 'próximo jueves', 'mañana', 'el lunes', etc., calcula la fecha correcta a partir de esta fecha de referencia y pasa a la herramienta en YYYY-MM-DD y HH:MM.]\n"
     )
 
-    # Siempre incluir nombre y clínica en el contexto para que el asistente responda correctamente en cualquier turno
+    # Siempre incluir nombre y clínica en el contexto para que el asistente responda correctamente en cualquier turno.
+    stored_full_name: str | None = None
+    if isinstance(metadata, dict):
+        stored_full_name = (metadata.get("patient_name") or "").strip() or None
+    if stored_first_name:
+        identidad_paciente = (
+            f" También conoces al paciente: su primer nombre es {stored_first_name}. "
+            f"Salúdalo solo por su primer nombre ({stored_first_name}) y NO vuelvas a pedirle su nombre."
+        )
+        if stored_full_name and len(stored_full_name.split()) > 1:
+            identidad_paciente += (
+                f" Cuando el usuario pida agendar una cita y NO diga que es para otra persona, la cita es para este paciente: "
+                f"usa DIRECTAMENTE el nombre completo \"{stored_full_name}\" en la herramienta agendar_cita y NUNCA preguntes el nombre. "
+                "Solo pregunta el nombre completo si el usuario indica explícitamente que la cita es para otra persona (ej. mi esposa, mi hijo, etc.)."
+            )
+        else:
+            identidad_paciente += (
+                f" Cuando agende una cita para este mismo paciente (sin decir que es para otro), usa \"{stored_first_name}\" en la herramienta y no preguntes el nombre."
+            )
+    else:
+        identidad_paciente = (
+            " Si todavía no conoces el nombre del paciente, puedes preguntarlo una sola vez de forma natural "
+            "y luego recuerda ese nombre para el resto de la conversación."
+        )
+
     identity_line = (
         f"\n\n[Datos del asistente: Tu nombre es {assistant_name}. Trabajas para la clínica {clinic_name}. "
         f"El ID de la clínica en este chat es: {clinic_id}. "
         f"Cuando te pregunten cómo te llamas, quién eres o con quién hablan, responde siempre con el nombre {assistant_name}. "
-        "NUNCA preguntes al usuario a qué clínica quiere ir ni pidas que indique la clínica: el paciente ya está hablando con la clínica actual; usa siempre la clínica del contexto.]\n"
+        "NUNCA preguntes al usuario a qué clínica quiere ir ni pidas que indique la clínica: el paciente ya está hablando con la clínica actual; usa siempre la clínica del contexto."
+        f"{identidad_paciente}]\n"
         "\n[Idioma: Responde siempre en el mismo idioma en que el usuario te escribe. "
         "Si escribe en español, responde en español; si escribe en inglés, responde en inglés; y así con cualquier otro idioma.]\n"
     )
@@ -278,15 +580,30 @@ def _generate_and_persist_reply(
 
     system_prompt_effective = base_prompt.strip() + referencia_fecha + identity_line + extra_instruction
 
-    # Instrucción para la herramienta agendar_cita (function calling)
+    # Inyectar horarios de la clínica
+    clinic_cfg = CLINICS_BY_ID.get(clinic_id)
+    if clinic_cfg is not None:
+        schedule_text = _format_opening_hours_for_prompt(clinic_cfg, language)
+        if schedule_text:
+            system_prompt_effective = system_prompt_effective + schedule_text
+
+    # Inyectar catálogo de servicios para que el modelo sepa precios, disponibilidad y pueda pedir el tipo de cita
+    catalog_text = _format_services_catalog_for_prompt(_SERVICES_RAW, language)
+    if catalog_text:
+        system_prompt_effective = system_prompt_effective + catalog_text
+
+    # Instrucción para herramientas de citas (agendar, cancelar, reagendar)
     tool_instruction = (
-        "\n\n[Tienes la herramienta agendar_cita(nombre, fecha, hora). La clínica se toma del contexto (no la pidas al usuario). "
-        "Acepta fechas y horas en lenguaje natural. OBLIGATORIO: usa SIEMPRE la 'FECHA Y HORA DE REFERENCIA' indicada arriba como hoy/ahora para calcular fechas relativas: "
-        "'próximo jueves' = el jueves de la semana actual o la siguiente según corresponda; 'mañana' = fecha de referencia + 1 día; 'el lunes' = el lunes próximo; etc. "
-        "Cuando el usuario confirme, calcula la fecha correcta a partir de esa referencia y pasa a la herramienta fecha en YYYY-MM-DD y hora en HH:MM. "
-        "Nunca pidas al usuario que escriba la fecha en formato aaaa-mm-dd ni que indique la clínica. "
-        "Úsala solo cuando el usuario confirme explícitamente nombre, fecha y hora para agendar. "
-        "Después de ejecutarla con éxito, responde al usuario usando exactamente el texto del campo 'mensaje' que te devuelva la herramienta.]"
+        "\n\n[Tienes tres herramientas de citas. La clínica se toma del contexto (no la pidas al usuario). "
+        "(1) agendar_cita(nombre, fecha, hora, servicio): para citas nuevas. "
+        "El parámetro 'servicio' debe ser el id de uno de los servicios del catálogo (ej. limpieza, revision, extraccion). "
+        "Si ya conoces al paciente, usa su nombre completo y no preguntes. Solo pregunta el nombre si la cita es para otra persona. "
+        "(2) cancelar_cita(): sin parámetros. Úsala cuando el usuario pida cancelar su cita (ej. 'quiero cancelar mi cita', 'cancela mi reserva'). "
+        "(3) reagendar_cita(fecha, hora, servicio opcional): cuando pida cambiar la fecha/hora de su cita (ej. 'reagendar para el viernes', 'cambiar mi cita a mañana a las 10'). "
+        "La fecha en YYYY-MM-DD y hora en HH:MM; usa la FECHA Y HORA DE REFERENCIA de arriba para calcular 'mañana', 'próximo viernes', etc. "
+        "Si no indica tipo de servicio al reagendar, no hace falta pasarlo. "
+        "Para fechas relativas (mañana, próximo lunes, etc.) usa SIEMPRE la referencia indicada arriba y pasa a la herramienta en YYYY-MM-DD y HH:MM. "
+        "Después de ejecutar cualquier herramienta con éxito, responde al usuario con el texto del campo 'mensaje' que te devuelva.]"
     )
     system_prompt_effective = system_prompt_effective.strip() + tool_instruction
 
@@ -295,6 +612,15 @@ def _generate_and_persist_reply(
     def tool_handler(name: str, args: dict) -> dict:
         if name == "agendar_cita":
             return _handle_agendar_cita(
+                from_number=from_number,
+                clinic_id=clinic_id,
+                language=language,
+                args=args,
+            )
+        if name == "cancelar_cita":
+            return _handle_cancelar_cita(from_number=from_number, clinic_id=clinic_id, language=language)
+        if name == "reagendar_cita":
+            return _handle_reagendar_cita(
                 from_number=from_number,
                 clinic_id=clinic_id,
                 language=language,

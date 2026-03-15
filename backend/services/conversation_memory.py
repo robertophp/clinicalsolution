@@ -96,7 +96,7 @@ class ConversationMemoryService:
         clinic_id: str,
         from_number: str,
     ) -> dict[str, Any]:
-        """Return lightweight metadata for this conversation (e.g. language, updated_at)."""
+        """Return lightweight metadata for this conversation (e.g. language, patient name, updated_at)."""
         doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
         doc = doc_ref.get()
         if not doc or not doc.exists:
@@ -106,6 +106,10 @@ class ConversationMemoryService:
         metadata: dict[str, Any] = {}
         if "conversation_language" in data:
             metadata["conversation_language"] = data.get("conversation_language")
+        if "patient_name" in data:
+            metadata["patient_name"] = data.get("patient_name")
+        if "patient_first_name" in data:
+            metadata["patient_first_name"] = data.get("patient_first_name")
         if "updated_at" in data:
             metadata["updated_at"] = _parse_timestamp(data.get("updated_at"))
         return metadata
@@ -165,6 +169,39 @@ class ConversationMemoryService:
         doc_ref.set(
             {
                 "conversation_language": language,
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_patient_name(
+        self,
+        clinic_id: str,
+        from_number: str,
+        full_name: str,
+    ) -> None:
+        """
+        Persist the patient's full name and first name for this user/clinic.
+        Used so the assistant can greet by first name and avoid asking again.
+        """
+        name = (full_name or "").strip()
+        if not name:
+            return
+
+        parts = name.split()
+        first_name = parts[0] if parts else name
+        # Normalize to title case (Roberto, María, etc.)
+        first_name_norm = first_name[:1].upper() + first_name[1:].lower() if first_name else first_name
+
+        coll = self._db.collection(COLLECTION_NAME)
+        doc_ref = coll.document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "patient_name": name,
+                "patient_first_name": first_name_norm,
                 "updated_at": now,
                 "clinic_id": clinic_id,
                 "from_number": from_number,
