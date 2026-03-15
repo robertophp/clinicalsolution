@@ -14,6 +14,7 @@ Backend mínimo para un asistente de IA para clínicas dentales sobre WhatsApp u
 - `backend/database.py`: configuración de SQLAlchemy con dialecto BigQuery y modelo `Cita`.
 - `backend/services/gemini_service.py`: clase `GeminiService` que envuelve Gemini 1.5 Flash.
 - `backend/data/clinics_mock.json`: configuración mock de clínicas y sus `system_prompt`.
+- `backend/data/services_catalog.json`: catálogo de servicios (id, nombre, precio, disponibilidad) para que el asistente informe precios y guarde el tipo de cita en BigQuery.
 - `backend/main.py`: webhook `/whatsapp` para Twilio, endpoint `/chat` (JSON) y `/health`.
 - `backend/services/conversation_memory.py`: memoria de conversación en Firestore (historial por usuario/clínica, TTL e inactividad).
 
@@ -54,6 +55,27 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
   - `Body`: texto del mensaje.
 
 La respuesta será TwiML con un `<Message>` generado por Gemini usando el `system_prompt` configurado para la clínica. El historial de los últimos mensajes del usuario (por número y clínica) se guarda en **Firestore** y se envía a Gemini como contexto; tras X minutos de inactividad solo se usa lo reciente (configurable con `CONVERSATION_TTL_MINUTES`). Necesitas tener Firestore (modo nativo) habilitado en tu proyecto GCP.
+
+### BigQuery: tabla de citas
+
+La tabla `clinica_datos.citas` debe tener (además de las columnas que ya uses) la columna **`razon_cita`** (STRING, nullable) y **`status`** (STRING). Valores de `status`:
+
+- **activa**: cita en pie (valor por defecto al crear una cita nueva).
+- **cancelada**: el cliente canceló la cita.
+- **reagendada**: la cita se movió a otro horario; la cita nueva queda como activa.
+
+Si la columna `status` no existe en BigQuery:
+
+```sql
+ALTER TABLE `tu_proyecto.clinica_datos.citas`
+ADD COLUMN IF NOT EXISTS status STRING;
+ALTER TABLE `tu_proyecto.clinica_datos.citas`
+ADD COLUMN IF NOT EXISTS razon_cita STRING;
+```
+
+### Catálogo de servicios
+
+En `backend/data/services_catalog.json` se define la lista de servicios con `id`, `name`, `name_en`, `price`, `currency`, `status` y `aliases`. El modelo usa este catálogo para: entender qué servicio quiere el usuario (o preguntarle si no está claro), responder preguntas de precios y guardar el `id` del servicio en `razon_cita` al agendar.
 
 # clinicalsolution
 Dental Solution using GCP enviorment
