@@ -27,6 +27,8 @@ from .repositories import (
 )
 from .services.gemini_service import GeminiService, GeminiServiceError
 from .services.conversation_memory import ConversationMemoryService
+from .services.intent_classifier import Intent, classify_intent
+from .services.intent_llm_service import llm_classify_intent
 
 # Asegurar que los logs (y tracebacks) se vean en la consola de uvicorn
 logging.basicConfig(
@@ -46,6 +48,8 @@ class ClinicConfig(BaseModel):
     system_prompt_en: str | None = None  # Prompt equivalente en inglés (opcional)
     assistant_name: str = "Asistente Virtual"  # Nombre con el que se presenta el bot
     opening_hours: Dict[str, Any] | None = None  # Horarios de atención por bloque (ej. mon_fri, sat)
+    # Guardrails por clínica: lista de intents permitidos; si está vacía/None se permiten todos excepto OUT_OF_DOMAIN.
+    allowed_intents: list[str] | None = None
 
 
 class ChatRequest(BaseModel):
@@ -173,6 +177,51 @@ def _format_opening_hours_for_prompt(clinic: ClinicConfig, language: str) -> str
     return "\n".join(lines)
 
 
+def _is_within_opening_hours(clinic: ClinicConfig, fecha: str, hora: str) -> bool:
+    """
+    Valida si la fecha (YYYY-MM-DD) y hora (HH:MM) caen dentro del horario de atención
+    configurado para la clínica.
+    """
+    opening_hours = getattr(clinic, "opening_hours", None) or {}
+    if not opening_hours:
+        # Si no hay horarios configurados, no restringimos.
+        return True
+
+    fecha = (fecha or "").strip()
+    hora = (hora or "").strip()
+    if not fecha or not hora:
+        return False
+
+    try:
+        d = datetime.strptime(fecha, "%Y-%m-%d").date()
+        t = datetime.strptime(hora, "%H:%M").time()
+    except ValueError:
+        # Formato inválido, dejamos que otras validaciones se encarguen.
+        return True
+
+    # Mapear weekday (0=lun..6=dom) a códigos mon/tue/... usados en clinics_mock.json
+    weekday_codes = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    day_code = weekday_codes[d.weekday()]
+
+    for block in opening_hours.values():
+        days = block.get("days", [])
+        start = (block.get("from") or "").strip()
+        end = (block.get("to") or "").strip()
+        if not days or not start or not end:
+            continue
+        if day_code not in days:
+            continue
+        try:
+            start_t = datetime.strptime(start, "%H:%M").time()
+            end_t = datetime.strptime(end, "%H:%M").time()
+        except ValueError:
+            continue
+        if start_t <= t <= end_t:
+            return True
+
+    return False
+
+
 def _load_services_catalog(path: Path) -> List[Dict[str, Any]]:
     """Carga el catálogo de servicios desde JSON (id, name, price, status, aliases)."""
     if not path.exists():
@@ -253,6 +302,21 @@ def _handle_agendar_cita(from_number: str, clinic_id: str, language: str, args: 
         else:
             msg = "No pude agendar la cita: faltan nombre, fecha, hora o tipo de servicio. Por favor confirma todos los datos, incluyendo el tipo de cita (ej. limpieza, revisión)."
         return {"error": "Faltan datos", "mensaje": msg}
+
+    # Validar que la fecha y hora estén dentro del horario de atención de la clínica.
+    clinic_cfg = CLINICS_BY_ID.get(clinic_id)
+    if clinic_cfg is not None and not _is_within_opening_hours(clinic_cfg, fecha, hora):
+        if language == "en":
+            msg = (
+                "I can't schedule an appointment at that day/time because it is outside this clinic's opening hours. "
+                "Please choose a time within the clinic schedule shown above (weekdays and Saturday only)."
+            )
+        else:
+            msg = (
+                "No puedo agendar una cita en ese día u hora porque está fuera del horario de atención de esta clínica. "
+                "Por favor elige un horario dentro del horario de la clínica que ves arriba (solo de lunes a sábado)."
+            )
+        return {"error": "Fuera de horario", "mensaje": msg}
 
     # Si el nombre recibido es solo el primer nombre del mismo paciente, usar nombre completo: primero de metadata (Firestore), y si no hay nombre completo ahí, de la última cita en BigQuery.
     first_word = nombre.split()[0] if nombre.split() else nombre
@@ -502,6 +566,38 @@ def _generate_and_persist_reply(
         language = _detect_language(body)
         conversation_memory.set_conversation_language(clinic_id, from_number, language)
 
+    # Guardrails de dominio por clínica: clasificar intención y, solo si es fuera de dominio, responder sin llamar a Gemini.
+    try:
+        # Primero intentamos clasificar con LLM; si falla, hacemos fallback a reglas.
+        intent = llm_classify_intent(
+            gemini=gemini_service,
+            message=body,
+            language=language,
+            history=history,
+        )
+    except Exception:
+        try:
+            intent = classify_intent(body, language, history)
+        except Exception:
+            intent = Intent.OUT_OF_DOMAIN
+
+    if intent is Intent.OUT_OF_DOMAIN:
+        if language == "en":
+            reply_text = (
+                "I'm sorry 😔, that's outside what I can help with. "
+                "I'm focused on this dental clinic: appointments, treatments, prices and opening hours. "
+                "If you want, I can help you with a dental question or to book or manage an appointment here."
+            )
+        else:
+            reply_text = (
+                "Lo siento 😔, eso está fuera de lo que puedo hacer. "
+                "Estoy enfocado en esta clínica dental: citas, tratamientos, precios y horarios. "
+                "Si quieres, con gusto te ayudo con una duda dental o a agendar o gestionar tu cita aquí."
+            )
+        conversation_memory.add_message(clinic_id, from_number, "user", body)
+        conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+        return reply_text
+
     # Fecha y hora actual como referencia (hora local El Salvador, UTC-6; sin dependencia de tzdata/zoneinfo)
     tz_salvador = timezone(timedelta(hours=-6))
     now_local = datetime.now(tz_salvador)
@@ -580,12 +676,29 @@ def _generate_and_persist_reply(
 
     system_prompt_effective = base_prompt.strip() + referencia_fecha + identity_line + extra_instruction
 
-    # Inyectar horarios de la clínica
+    # Inyectar horarios de la clínica y regla estricta para no crear falsas expectativas
     clinic_cfg = CLINICS_BY_ID.get(clinic_id)
     if clinic_cfg is not None:
         schedule_text = _format_opening_hours_for_prompt(clinic_cfg, language)
         if schedule_text:
             system_prompt_effective = system_prompt_effective + schedule_text
+            if language == "en":
+                schedule_rule = (
+                    "\n\n[CRITICAL - APPOINTMENT TIMES: The clinic ONLY accepts appointments during the opening hours listed above. "
+                    "NEVER suggest or confirm a specific time (e.g. 'How about 11:00 AM?') if that day or time is outside those hours. "
+                    "If the patient asks for a day we are closed (e.g. Sunday) or a time outside the range, do NOT say you can book it. "
+                    "Say clearly that that day/time is not available and ask them to choose another within the published schedule. "
+                    "Only call agendar_cita or reagendar_cita with date and time that fall strictly within the opening hours.]"
+                )
+            else:
+                schedule_rule = (
+                    "\n\n[CRÍTICO - HORARIOS DE CITA: La clínica SOLO acepta citas dentro del horario de atención indicado arriba. "
+                    "NUNCA sugieras ni confirmes una hora concreta (ej. '¿Te parece a las 11:00?) si ese día u hora está fuera de ese horario. "
+                    "Si el paciente pide un día en que no abrimos (ej. domingo) o una hora fuera del rango, NO digas que puedes agendarla. "
+                    "Di claramente que ese día/hora no está disponible y pídele que elija otro dentro del horario publicado. "
+                    "Solo llama agendar_cita o reagendar_cita con fecha y hora que caigan estrictamente dentro del horario de atención.]"
+                )
+            system_prompt_effective = system_prompt_effective + schedule_rule
 
     # Inyectar catálogo de servicios para que el modelo sepa precios, disponibilidad y pueda pedir el tipo de cita
     catalog_text = _format_services_catalog_for_prompt(_SERVICES_RAW, language)
@@ -593,18 +706,33 @@ def _generate_and_persist_reply(
         system_prompt_effective = system_prompt_effective + catalog_text
 
     # Instrucción para herramientas de citas (agendar, cancelar, reagendar)
-    tool_instruction = (
-        "\n\n[Tienes tres herramientas de citas. La clínica se toma del contexto (no la pidas al usuario). "
-        "(1) agendar_cita(nombre, fecha, hora, servicio): para citas nuevas. "
-        "El parámetro 'servicio' debe ser el id de uno de los servicios del catálogo (ej. limpieza, revision, extraccion). "
-        "Si ya conoces al paciente, usa su nombre completo y no preguntes. Solo pregunta el nombre si la cita es para otra persona. "
-        "(2) cancelar_cita(): sin parámetros. Úsala cuando el usuario pida cancelar su cita (ej. 'quiero cancelar mi cita', 'cancela mi reserva'). "
-        "(3) reagendar_cita(fecha, hora, servicio opcional): cuando pida cambiar la fecha/hora de su cita (ej. 'reagendar para el viernes', 'cambiar mi cita a mañana a las 10'). "
-        "La fecha en YYYY-MM-DD y hora en HH:MM; usa la FECHA Y HORA DE REFERENCIA de arriba para calcular 'mañana', 'próximo viernes', etc. "
-        "Si no indica tipo de servicio al reagendar, no hace falta pasarlo. "
-        "Para fechas relativas (mañana, próximo lunes, etc.) usa SIEMPRE la referencia indicada arriba y pasa a la herramienta en YYYY-MM-DD y HH:MM. "
-        "Después de ejecutar cualquier herramienta con éxito, responde al usuario con el texto del campo 'mensaje' que te devuelva.]"
-    )
+    if language == "en":
+        tool_instruction = (
+            "\n\n[You have three appointment tools. The clinic is from context (do not ask the user). "
+            "(1) agendar_cita(nombre, fecha, hora, servicio): for new appointments. "
+            "Only pass date and time that fall WITHIN the clinic's opening hours (shown above). "
+            "If the patient asks for an impossible time (e.g. Sunday or outside 08:00-17:00 on weekdays), do NOT call the tool: say that time is not available and ask them to choose within the published schedule. "
+            "'servicio' must be an id from the catalog (e.g. limpieza, revision, extraccion). "
+            "If you already know the patient, use their full name and do not ask. Only ask for name if the appointment is for someone else. "
+            "(2) cancelar_cita(): no parameters. Use when the user asks to cancel their appointment. "
+            "(3) reagendar_cita(fecha, hora, servicio optional): when they want to change date/time. Only with date/time within opening hours. "
+            "Date as YYYY-MM-DD and time as HH:MM; use the REFERENCE DATE AND TIME above for 'tomorrow', 'next Friday', etc. "
+            "After running any tool successfully, reply with the 'mensaje' field it returns.]"
+        )
+    else:
+        tool_instruction = (
+            "\n\n[Tienes tres herramientas de citas. La clínica se toma del contexto (no la pidas al usuario). "
+            "(1) agendar_cita(nombre, fecha, hora, servicio): para citas nuevas. "
+            "Solo pases fecha y hora que estén DENTRO del horario de atención de la clínica (el indicado arriba). "
+            "Si el paciente pide un horario imposible (ej. domingo o fuera de 08:00-17:00 entre semana, etc.), NO llames la herramienta: responde que ese horario no está disponible y pídele uno dentro del horario. "
+            "El parámetro 'servicio' debe ser el id de uno de los servicios del catálogo (ej. limpieza, revision, extraccion). "
+            "Si ya conoces al paciente, usa su nombre completo y no preguntes. Solo pregunta el nombre si la cita es para otra persona. "
+            "(2) cancelar_cita(): sin parámetros. Úsala cuando el usuario pida cancelar su cita (ej. 'quiero cancelar mi cita', 'cancela mi reserva'). "
+            "(3) reagendar_cita(fecha, hora, servicio opcional): cuando pida cambiar la fecha/hora de su cita. Solo con fecha/hora dentro del horario de atención. "
+            "La fecha en YYYY-MM-DD y hora en HH:MM; usa la FECHA Y HORA DE REFERENCIA de arriba para calcular 'mañana', 'próximo viernes', etc. "
+            "Para fechas relativas (mañana, próximo lunes, etc.) usa SIEMPRE la referencia indicada arriba y pasa a la herramienta en YYYY-MM-DD y HH:MM. "
+            "Después de ejecutar cualquier herramienta con éxito, responde al usuario con el texto del campo 'mensaje' que te devuelva.]"
+        )
     system_prompt_effective = system_prompt_effective.strip() + tool_instruction
 
     chat_history = _build_chat_history_with_memory(clinic_id, from_number, body)
