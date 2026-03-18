@@ -18,7 +18,9 @@
           "to": "14:00"
         }
       },
-      "allowed_intents": ["cita", "servicios", "clinica_info", "seguimiento_cita", "small_talk"]
+      "allowed_intents": ["cita", "servicios", "clinica_info", "seguimiento_cita", "small_talk"],
+      "calendar_id": "roberto.menivar.hz@gmail.com",
+      "calendar_sync_enabled": true
     },
     {
       "id": "demo_clinic_2",
@@ -38,7 +40,9 @@
           "to": "14:00"
         }
       },
-      "allowed_intents": ["cita", "servicios", "clinica_info", "seguimiento_cita", "small_talk"]
+      "allowed_intents": ["cita", "servicios", "clinica_info", "seguimiento_cita", "small_talk"],
+      "calendar_id": null,
+      "calendar_sync_enabled": false
     }
   ]
 }

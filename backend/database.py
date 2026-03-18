@@ -48,6 +48,14 @@ class Cita(Base):
     razon_cita: str = Column("razon_cita", String(255), nullable=True)  # tipo de servicio / razón de la cita
     clinic_id: str = Column("clinica_id", String(255), nullable=True)
     status: str = Column("status", String(64), nullable=True)
+    # Origen y trazabilidad de la reserva (ej. whatsapp_assistant, web, manual).
+    origen_reserva: str = Column("origen_reserva", String(64), nullable=True)
+    agendado_por: str = Column("agendado_por", String(255), nullable=True)
+    # Integración con Google Calendar.
+    calendar_event_id: str = Column("calendar_event_id", String(255), nullable=True)
+    calendar_id: str = Column("calendar_id", String(255), nullable=True)
+    sync_status: str = Column("sync_status", String(32), nullable=True)
+    sync_error_message: str = Column("sync_error_message", String(1024), nullable=True)
     timestamp: datetime = Column(
         "creado_en",
         TIMESTAMP(timezone=True),

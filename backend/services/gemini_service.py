@@ -153,8 +153,14 @@ class GeminiService:
     ) -> str:
         """
         Genera respuesta usando herramientas (function calling).
-        Si el modelo devuelve function_calls, se invoca tool_handler(name, args) y se reenvía
-        el resultado a Gemini para obtener el texto final.
+
+        Flujo:
+        - Gemini puede devolver llamadas a funciones (function_calls).
+        - Para cada llamada se ejecuta tool_handler(name, args).
+        - Si la herramienta devuelve un dict con clave 'mensaje' y sin 'error',
+          se responde directamente al usuario con ese texto (confirmación de cita).
+        - Si no hay 'mensaje', el resultado se reenvía a Gemini para que genere
+          una respuesta libre con contexto de herramientas.
         """
         if self._model is None:
             raise GeminiServiceError("Modelo Gemini no inicializado.")
@@ -206,6 +212,15 @@ class GeminiService:
                 name = getattr(fc, "name", None) or ""
                 args = dict(getattr(fc, "args", None) or {})
                 result = tool_handler(name, args)
+                # Si la herramienta devolvió un mensaje claro de confirmación (sin error),
+                # respondemos directamente al usuario con ese texto, sin dar otra vuelta
+                # por el modelo. Esto garantiza que el paciente vea siempre la
+                # confirmación de agendar/reagendar/cancelar.
+                if isinstance(result, dict) and "mensaje" in result and not result.get("error"):
+                    mensaje = str(result["mensaje"]).strip()
+                    if mensaje:
+                        return mensaje
+
                 response_parts.append(Part.from_function_response(name=name, response=result))
 
             contents.append(Content(role="model", parts=candidate.content.parts))

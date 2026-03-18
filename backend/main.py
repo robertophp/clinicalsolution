@@ -5,6 +5,7 @@ import logging
 import sys
 import time
 import traceback
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -29,6 +30,7 @@ from .services.gemini_service import GeminiService, GeminiServiceError
 from .services.conversation_memory import ConversationMemoryService
 from .services.intent_classifier import Intent, classify_intent
 from .services.intent_llm_service import llm_classify_intent
+from .services.calendar_service import calendar_service, CalendarServiceError
 
 # Asegurar que los logs (y tracebacks) se vean en la consola de uvicorn
 logging.basicConfig(
@@ -50,6 +52,9 @@ class ClinicConfig(BaseModel):
     opening_hours: Dict[str, Any] | None = None  # Horarios de atención por bloque (ej. mon_fri, sat)
     # Guardrails por clínica: lista de intents permitidos; si está vacía/None se permiten todos excepto OUT_OF_DOMAIN.
     allowed_intents: list[str] | None = None
+    # Integración con Google Calendar: ID del calendario y flag para habilitar sync.
+    calendar_id: str | None = None
+    calendar_sync_enabled: bool = False
 
 
 class ChatRequest(BaseModel):
@@ -115,6 +120,35 @@ def _load_clinics_config(path: Path) -> Dict[str, ClinicConfig]:
         raise RuntimeError("No se encontraron clínicas configuradas en 'clinics_mock.json'.")
 
     return clinics
+
+
+def _retry_delete_event_async(
+    calendar_id: str,
+    event_id: str,
+    retries: int = 2,
+    delay_seconds: float = 5.0,
+) -> None:
+    """
+    Reintenta de forma asíncrona y limitada borrar un evento de Calendar cuando
+    la llamada inicial falló por un error de red/transitorio.
+
+    - No bloquea la respuesta al paciente.
+    - No corre de forma periódica: solo se dispara cuando hay un error.
+    """
+
+    if not calendar_id or not event_id:
+        return
+
+    def _worker() -> None:
+        for _ in range(max(retries, 0)):
+            try:
+                calendar_service.delete_event(calendar_id=calendar_id, event_id=event_id)
+                break
+            except CalendarServiceError:
+                time.sleep(max(delay_seconds, 0.1))
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -285,7 +319,13 @@ def _build_chat_history_with_memory(
     return [*history, current]
 
 
-def _handle_agendar_cita(from_number: str, clinic_id: str, language: str, args: dict) -> dict:
+def _handle_agendar_cita(
+    from_number: str,
+    clinic_id: str,
+    language: str,
+    assistant_name: str,
+    args: dict,
+) -> dict:
     """
     Ejecuta el insert en BigQuery para agendar una cita.
     clinic_id viene del contexto (webhook), no del usuario.
@@ -358,7 +398,7 @@ def _handle_agendar_cita(from_number: str, clinic_id: str, language: str, args: 
 
     db = SessionLocal()
     try:
-        create_cita(
+        cita = create_cita(
             db,
             clinic_id=clinic_id,
             paciente_nombre=nombre,
@@ -366,7 +406,31 @@ def _handle_agendar_cita(from_number: str, clinic_id: str, language: str, args: 
             fecha=fecha,
             hora=hora,
             razon_cita=servicio,
+            origen_reserva="whatsapp_assistant",
+            agendado_por=assistant_name,
         )
+
+        # Sincronizar con Google Calendar si está habilitado para la clínica.
+        if clinic_cfg and clinic_cfg.calendar_sync_enabled and clinic_cfg.calendar_id:
+            try:
+                event_id = calendar_service.create_event_for_cita(
+                    calendar_id=clinic_cfg.calendar_id,
+                    cita=cita,
+                    clinic_name=clinic_cfg.name,
+                    assistant_name=assistant_name,
+                )
+                cita.calendar_event_id = event_id
+                cita.calendar_id = clinic_cfg.calendar_id
+                cita.sync_status = "ok"
+                cita.sync_error_message = None
+                db.add(cita)
+                db.commit()
+            except CalendarServiceError as exc:
+                # Marcamos el error de sync, pero no rompemos el flujo de la cita.
+                cita.sync_status = "error"
+                cita.sync_error_message = str(exc)
+                db.add(cita)
+                db.commit()
         # #region agent log
         try:
             with open("debug-84132f.log", "a", encoding="utf-8") as _f:
@@ -411,6 +475,29 @@ def _handle_cancelar_cita(from_number: str, clinic_id: str, language: str) -> di
             else:
                 msg = "No tienes una cita activa que cancelar. Si tenías una, puede que ya esté cancelada o reagendada."
             return {"error": "Sin cita activa", "mensaje": msg}
+        # Antes de actualizar el estado en BQ, intentamos cancelar en Calendar (si aplica).
+        clinic_cfg = CLINICS_BY_ID.get(clinic_id)
+        if (
+            clinic_cfg
+            and clinic_cfg.calendar_sync_enabled
+            and cita.calendar_id
+            and cita.calendar_event_id
+        ):
+            try:
+                calendar_service.delete_event(
+                    calendar_id=cita.calendar_id,
+                    event_id=cita.calendar_event_id,
+                )
+                cita.sync_status = "ok"
+                cita.sync_error_message = None
+            except CalendarServiceError as exc:
+                cita.sync_status = "error"
+                cita.sync_error_message = str(exc)
+                # Lanzar un job asíncrono de reintento puntual (no un cron).
+                _retry_delete_event_async(
+                    calendar_id=cita.calendar_id,
+                    event_id=cita.calendar_event_id,
+                )
         update_cita_status(db, cita, CITA_STATUS_CANCELADA)
         if language == "en":
             mensaje = "Your appointment has been cancelled. If you need a new one, just ask to schedule it."
@@ -428,7 +515,7 @@ def _handle_cancelar_cita(from_number: str, clinic_id: str, language: str) -> di
         db.close()
 
 
-def _handle_reagendar_cita(from_number: str, clinic_id: str, language: str, args: dict) -> dict:
+def _handle_reagendar_cita(from_number: str, clinic_id: str, language: str, assistant_name: str, args: dict) -> dict:
     """
     Marca la cita activa actual como reagendada y crea una nueva con fecha/hora/servicio indicados.
     Si no se pasa servicio, se usa el de la cita actual.
@@ -456,8 +543,11 @@ def _handle_reagendar_cita(from_number: str, clinic_id: str, language: str, args
         nombre = (cita_activa.paciente_nombre or "").strip() or "Sin nombre"
         razon = (servicio or (cita_activa.razon_cita or "").strip()) or None
 
+        # Marcar la cita actual como reagendada.
         update_cita_status(db, cita_activa, CITA_STATUS_REAGENDADA)
-        create_cita(
+
+        # Crear la nueva cita en BigQuery.
+        cita_nueva = create_cita(
             db,
             clinic_id=clinic_id,
             paciente_nombre=nombre,
@@ -465,7 +555,46 @@ def _handle_reagendar_cita(from_number: str, clinic_id: str, language: str, args
             fecha=fecha,
             hora=hora,
             razon_cita=razon or "revision",
+            origen_reserva="whatsapp_assistant",
+            agendado_por=assistant_name,
         )
+
+        # Sincronización con Calendar: eliminamos el evento anterior (si existe) y
+        # creamos uno nuevo para la cita reagendada.
+        clinic_cfg = CLINICS_BY_ID.get(clinic_id)
+        if clinic_cfg and clinic_cfg.calendar_sync_enabled and clinic_cfg.calendar_id:
+            # Borrar evento anterior si tenía integración.
+            if cita_activa.calendar_id and cita_activa.calendar_event_id:
+                try:
+                    calendar_service.delete_event(
+                        calendar_id=cita_activa.calendar_id,
+                        event_id=cita_activa.calendar_event_id,
+                    )
+                except CalendarServiceError as exc:
+                    cita_activa.sync_status = "error"
+                    cita_activa.sync_error_message = str(exc)
+                    db.add(cita_activa)
+                    db.commit()
+
+            # Crear evento para la nueva cita.
+            try:
+                event_id = calendar_service.create_event_for_cita(
+                    calendar_id=clinic_cfg.calendar_id,
+                    cita=cita_nueva,
+                    clinic_name=clinic_cfg.name,
+                    assistant_name=assistant_name,
+                )
+                cita_nueva.calendar_event_id = event_id
+                cita_nueva.calendar_id = clinic_cfg.calendar_id
+                cita_nueva.sync_status = "ok"
+                cita_nueva.sync_error_message = None
+                db.add(cita_nueva)
+                db.commit()
+            except CalendarServiceError as exc:
+                cita_nueva.sync_status = "error"
+                cita_nueva.sync_error_message = str(exc)
+                db.add(cita_nueva)
+                db.commit()
         if language == "en":
             mensaje = f"Done! I've rescheduled your appointment to {fecha} at {hora}."
         else:
@@ -743,6 +872,7 @@ def _generate_and_persist_reply(
                 from_number=from_number,
                 clinic_id=clinic_id,
                 language=language,
+                assistant_name=assistant_name,
                 args=args,
             )
         if name == "cancelar_cita":
@@ -752,6 +882,7 @@ def _generate_and_persist_reply(
                 from_number=from_number,
                 clinic_id=clinic_id,
                 language=language,
+                assistant_name=assistant_name,
                 args=args,
             )
         return {"error": "Herramienta desconocida", "mensaje": "No pude completar la acción."}

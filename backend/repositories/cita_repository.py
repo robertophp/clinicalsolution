@@ -4,7 +4,7 @@ Estados de cita: activa (por defecto), cancelada, reagendada.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -39,6 +39,17 @@ def _parse_fecha_hora(fecha: str, hora: str) -> datetime:
     return datetime.combine(d, t)
 
 
+def _now_el_salvador() -> datetime:
+    """
+    Devuelve la fecha/hora actual en la zona horaria de El Salvador (UTC-6).
+
+    Se usa para el campo creado_en de la tabla, de modo que refleje la hora local
+    de la clínica en El Salvador en lugar de UTC.
+    """
+    tz_salvador = timezone(timedelta(hours=-6))
+    return datetime.now(tz_salvador)
+
+
 def create_cita(
     db: Session,
     *,
@@ -49,6 +60,8 @@ def create_cita(
     hora: str,
     razon_cita: str | None = None,
     status: str | None = None,
+    origen_reserva: str | None = None,
+    agendado_por: str | None = None,
 ) -> Cita:
     """
     Inserta una cita en BigQuery (tabla clinica_datos.citas).
@@ -63,7 +76,9 @@ def create_cita(
         hora_cita=dt.time(),
         razon_cita=(razon_cita or "").strip() or None,
         status=(status or "").strip() or CITA_STATUS_ACTIVA,
-        timestamp=datetime.now(timezone.utc),
+        origen_reserva=(origen_reserva or "").strip() or None,
+        agendado_por=(agendado_por or "").strip() or None,
+        timestamp=_now_el_salvador(),
     )
     db.add(cita)
     db.commit()
