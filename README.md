@@ -3,7 +3,8 @@
 Backend mínimo para un asistente de IA para clínicas dentales sobre WhatsApp usando:
 
 - **FastAPI** como framework web.
-- **Twilio** para el webhook de WhatsApp y respuesta en formato TwiML.
+- **Twilio** (opcional) para el webhook `POST /whatsapp` y respuesta en formato TwiML.
+- **WhatsApp Cloud API (Meta)** para `GET`/`POST /webhooks/whatsapp` (respuesta vía Graph API); guía en [`docs/WHATSAPP_META.md`](docs/WHATSAPP_META.md).
 - **Vertex AI Gemini 1.5 Flash** como motor de IA.
 - **SQLAlchemy + BigQuery** como base de datos.
 - **pydantic-settings** para configuración via variables de entorno / `.env`.
@@ -15,7 +16,7 @@ Backend mínimo para un asistente de IA para clínicas dentales sobre WhatsApp u
 - `backend/services/gemini_service.py`: clase `GeminiService` que envuelve Gemini 1.5 Flash.
 - `backend/data/clinics_mock.json`: configuración mock de clínicas y sus `system_prompt`.
 - `backend/data/services_catalog.json`: catálogo de servicios (id, nombre, precio, disponibilidad) para que el asistente informe precios y guarde el tipo de cita en BigQuery.
-- `backend/main.py`: webhook `/whatsapp` para Twilio, endpoint `/chat` (JSON) y `/health`.
+- `backend/main.py`: webhooks `/whatsapp` (Twilio) y `/webhooks/whatsapp` (Meta), `/chat` (JSON) y `/health`.
 - `backend/services/conversation_memory.py`: memoria de conversación en Firestore (historial por usuario/clínica, TTL e inactividad).
 
 ### Instalación

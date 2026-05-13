@@ -19,8 +19,12 @@
         }
       },
       "allowed_intents": ["cita", "servicios", "clinica_info", "seguimiento_cita", "small_talk"],
-      "calendar_id": "roberto.menivar.hz@gmail.com",
-      "calendar_sync_enabled": true
+      "calendar_id": "dra.stephaniepalacios@clinicadentaltusonrisa.com",
+      "calendar_sync_enabled": true,
+      "google_maps_link": "https://maps.app.goo.gl/AkAsZgzfy1ZgUwnbA",
+      "indicaciones_parqueo": "Contamos con parqueo privado frente a la clínica",
+      "rutas_transporte_publico": "7C, 22, 52, 4T, 101D, 45AB, 38C",
+      "whatsapp_phone_number_id": "1098116840045683"
     },
     {
       "id": "demo_clinic_2",
@@ -42,7 +46,11 @@
       },
       "allowed_intents": ["cita", "servicios", "clinica_info", "seguimiento_cita", "small_talk"],
       "calendar_id": null,
-      "calendar_sync_enabled": false
+      "calendar_sync_enabled": false,
+      "google_maps_link": null,
+      "indicaciones_parqueo": null,
+      "rutas_transporte_publico": null,
+      "whatsapp_phone_number_id": null
     }
   ]
 }

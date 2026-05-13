@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, Form, Query
-from fastapi.responses import Response
+from fastapi import FastAPI, Form, Query, Request
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from langdetect import LangDetectException, detect
 from pydantic import BaseModel, ValidationError
 from twilio.twiml.messaging_response import MessagingResponse
@@ -31,6 +31,13 @@ from .services.conversation_memory import ConversationMemoryService
 from .services.intent_classifier import Intent, classify_intent
 from .services.intent_llm_service import llm_classify_intent
 from .services.calendar_service import calendar_service, CalendarServiceError
+from .services.calendar_sync_service import run_calendar_to_bigquery_sync
+from .services.meta_whatsapp_service import (
+    extract_incoming_whatsapp_events,
+    send_text_message,
+    verify_webhook_signature,
+)
+from .services.whatsapp_media_replies import reply_for_meta_media_type, reply_for_twilio_media
 
 # Asegurar que los logs (y tracebacks) se vean en la consola de uvicorn
 logging.basicConfig(
@@ -55,6 +62,12 @@ class ClinicConfig(BaseModel):
     # Integración con Google Calendar: ID del calendario y flag para habilitar sync.
     calendar_id: str | None = None
     calendar_sync_enabled: bool = False
+    # Ubicación y cómo llegar (opcional por clínica).
+    google_maps_link: str | None = None
+    indicaciones_parqueo: str | None = None
+    rutas_transporte_publico: str | None = None
+    # WhatsApp Cloud API (Meta): ID del número en Graph API (no es el WABA ni el teléfono legible).
+    whatsapp_phone_number_id: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -162,6 +175,30 @@ except Exception as exc:  # noqa: BLE001
     raise RuntimeError("Error cargando la configuración de clínicas.") from exc
 
 
+def _build_whatsapp_phone_number_id_map(clinics: Dict[str, ClinicConfig]) -> Dict[str, str]:
+    """Mapea Meta `phone_number_id` → `clinic_id` (solo clínicas con whatsapp_phone_number_id en JSON)."""
+    m: Dict[str, str] = {}
+    for cid, cfg in clinics.items():
+        pid = getattr(cfg, "whatsapp_phone_number_id", None)
+        if pid and str(pid).strip():
+            m[str(pid).strip()] = cid
+    return m
+
+
+WHATSAPP_PHONE_NUMBER_ID_TO_CLINIC = _build_whatsapp_phone_number_id_map(CLINICS_BY_ID)
+
+
+def _normalize_wa_id_for_storage(wa_id: str) -> str:
+    """
+    Meta envía el remitente como dígitos (ej. 50370211900).
+    Unificamos con el formato usado con Twilio: whatsapp:+<código país><número>.
+    """
+    digits = "".join(c for c in (wa_id or "") if c.isdigit())
+    if not digits:
+        return (wa_id or "").strip() or "unknown"
+    return f"whatsapp:+{digits}"
+
+
 def _format_opening_hours_for_prompt(clinic: ClinicConfig, language: str) -> str:
     """Formatea los horarios de atención de la clínica para el prompt (ES/EN)."""
     opening_hours = getattr(clinic, "opening_hours", None) or {}
@@ -208,6 +245,60 @@ def _format_opening_hours_for_prompt(clinic: ClinicConfig, language: str) -> str
         else:
             lines.append(f"- {days_txt}: de {start} a {end}")
 
+    return "\n".join(lines)
+
+
+def _format_clinic_location_for_prompt(clinic: ClinicConfig, language: str) -> str:
+    """
+    Enlace a Maps, parqueo y transporte: el modelo solo debe usar cada dato según la pregunta.
+    - Ubicación / dirección / dónde están: solo el enlace de Google Maps (nada más de este bloque).
+    - Parqueo: solo si el usuario pregunta explícitamente por parqueo/estacionamiento/aparcamiento.
+    - Transporte público: solo si pregunta por autobuses/rutas/transporte público/cómo llegar en bus.
+    """
+    maps = (getattr(clinic, "google_maps_link", None) or "").strip()
+    parking = (getattr(clinic, "indicaciones_parqueo", None) or "").strip()
+    transit = (getattr(clinic, "rutas_transporte_publico", None) or "").strip()
+    if not maps and not parking and not transit:
+        return ""
+
+    if language == "en":
+        lines: list[str] = ["\n\n[CLINIC LOCATION – follow these rules strictly:]"]
+        if maps:
+            lines.append(f"- Google Maps link (use ONLY for location/address/where the clinic is): {maps}")
+            lines.append(
+                "  If the patient asks where the clinic is, the address, location, or how to find you on the map, "
+                "reply with ONLY this link and a very short line (e.g. 'Here is the location:'). "
+                "Do NOT add parking or public transport details in that same reply unless they also asked for them."
+            )
+        if parking:
+            lines.append(f"- Parking (ONLY if they explicitly ask about parking): {parking}")
+        if transit:
+            lines.append(
+                f"- Public transport routes (ONLY if they explicitly ask about buses, routes, or public transport): {transit}"
+            )
+        lines.append(
+            "Never volunteer parking or public transport information in greetings or general replies. "
+            "Do not repeat the Maps link when answering only about parking or buses unless they also asked for the link."
+        )
+    else:
+        lines = ["\n\n[UBICACIÓN – sigue estas reglas al pie de la letra:]"]
+        if maps:
+            lines.append(f"- Enlace a Google Maps (solo para ubicación/dirección/dónde queda la clínica): {maps}")
+            lines.append(
+                "  Si el paciente pregunta dónde está la clínica, la dirección, ubicación o cómo encontrarlos en el mapa, "
+                "responde ÚNICAMENTE con este enlace y una frase muy breve (ej. 'Aquí está la ubicación:'). "
+                "No añadas en esa misma respuesta información de parqueo ni de transporte público, salvo que también lo pregunte."
+            )
+        if parking:
+            lines.append(f"- Parqueo (SOLO si pregunta explícitamente por parqueo, estacionamiento o aparcamiento): {parking}")
+        if transit:
+            lines.append(
+                f"- Transporte público (SOLO si pregunta explícitamente por autobuses, rutas o transporte público / cómo llegar en bus): {transit}"
+            )
+        lines.append(
+            "No ofrezcas por tu cuenta datos de parqueo ni de transporte en saludos o respuestas generales. "
+            "No repitas el enlace de Maps al responder solo sobre parqueo o buses, salvo que también pidan el enlace."
+        )
     return "\n".join(lines)
 
 
@@ -297,6 +388,23 @@ try:
     _SERVICES_RAW = _load_services_catalog(SERVICES_CATALOG_FILE)
 except Exception:  # noqa: BLE001
     _SERVICES_RAW = []
+
+
+def _services_for_clinic(clinic_id: str) -> List[Dict[str, Any]]:
+    """
+    Filtra servicios por `clinic_id`.
+
+    Regla:
+    - si el servicio tiene `clinic_id == clinic_id` => se incluye
+    - si el servicio tiene `clinic_id == "*"` => se considera compartido
+    - si el servicio no tiene `clinic_id` (compatibilidad) => se incluye
+    """
+    out: List[Dict[str, Any]] = []
+    for s in _SERVICES_RAW:
+        sc = s.get("clinic_id")
+        if sc is None or sc == "*" or sc == clinic_id:
+            out.append(s)
+    return out
 
 
 gemini_service = GeminiService(
@@ -829,8 +937,12 @@ def _generate_and_persist_reply(
                 )
             system_prompt_effective = system_prompt_effective + schedule_rule
 
+        location_text = _format_clinic_location_for_prompt(clinic_cfg, language)
+        if location_text:
+            system_prompt_effective = system_prompt_effective + location_text
+
     # Inyectar catálogo de servicios para que el modelo sepa precios, disponibilidad y pueda pedir el tipo de cita
-    catalog_text = _format_services_catalog_for_prompt(_SERVICES_RAW, language)
+    catalog_text = _format_services_catalog_for_prompt(_services_for_clinic(clinic_id), language)
     if catalog_text:
         system_prompt_effective = system_prompt_effective + catalog_text
 
@@ -841,7 +953,7 @@ def _generate_and_persist_reply(
             "(1) agendar_cita(nombre, fecha, hora, servicio): for new appointments. "
             "Only pass date and time that fall WITHIN the clinic's opening hours (shown above). "
             "If the patient asks for an impossible time (e.g. Sunday or outside 08:00-17:00 on weekdays), do NOT call the tool: say that time is not available and ask them to choose within the published schedule. "
-            "'servicio' must be an id from the catalog (e.g. limpieza, revision, extraccion). "
+            "'servicio' must be the exact 'id' string from the SERVICES CATALOG above (do not invent ids). "
             "If you already know the patient, use their full name and do not ask. Only ask for name if the appointment is for someone else. "
             "(2) cancelar_cita(): no parameters. Use when the user asks to cancel their appointment. "
             "(3) reagendar_cita(fecha, hora, servicio optional): when they want to change date/time. Only with date/time within opening hours. "
@@ -854,7 +966,7 @@ def _generate_and_persist_reply(
             "(1) agendar_cita(nombre, fecha, hora, servicio): para citas nuevas. "
             "Solo pases fecha y hora que estén DENTRO del horario de atención de la clínica (el indicado arriba). "
             "Si el paciente pide un horario imposible (ej. domingo o fuera de 08:00-17:00 entre semana, etc.), NO llames la herramienta: responde que ese horario no está disponible y pídele uno dentro del horario. "
-            "El parámetro 'servicio' debe ser el id de uno de los servicios del catálogo (ej. limpieza, revision, extraccion). "
+            "El parámetro 'servicio' debe ser el 'id' exacto de uno de los servicios del catálogo de arriba (no inventes ids). "
             "Si ya conoces al paciente, usa su nombre completo y no preguntes. Solo pregunta el nombre si la cita es para otra persona. "
             "(2) cancelar_cita(): sin parámetros. Úsala cuando el usuario pida cancelar su cita (ej. 'quiero cancelar mi cita', 'cancela mi reserva'). "
             "(3) reagendar_cita(fecha, hora, servicio opcional): cuando pida cambiar la fecha/hora de su cita. Solo con fecha/hora dentro del horario de atención. "
@@ -897,11 +1009,137 @@ def _generate_and_persist_reply(
     return reply_text
 
 
+def _resolve_whatsapp_reply_language(
+    clinic_id: str,
+    from_number: str,
+    *,
+    hint_text: str | None = None,
+) -> str:
+    """es | en para plantillas de medio; reutiliza idioma de conversación o detección."""
+    metadata = conversation_memory.get_metadata(clinic_id, from_number) or {}
+    stored = metadata.get("conversation_language") if isinstance(metadata, dict) else None
+    if stored in ("es", "en"):
+        return stored
+    if hint_text and hint_text.strip():
+        return _detect_language(hint_text)
+    return "es"
+
+
+@app.get("/webhooks/whatsapp", response_class=PlainTextResponse)
+async def meta_whatsapp_verify(
+    hub_mode: str | None = Query(None, alias="hub.mode"),
+    hub_verify_token: str | None = Query(None, alias="hub.verify_token"),
+    hub_challenge: str | None = Query(None, alias="hub.challenge"),
+) -> PlainTextResponse:
+    """
+    Verificación del webhook que Meta hace al configurar la URL (GET).
+    Debes usar el mismo META_WEBHOOK_VERIFY_TOKEN en Meta Developer Console y en .env.
+    """
+    if hub_mode != "subscribe":
+        return PlainTextResponse("Forbidden", status_code=403)
+    expected = (settings.META_WEBHOOK_VERIFY_TOKEN or "").strip()
+    if not expected or hub_verify_token != expected:
+        logging.warning("Meta webhook verify: token no coincide o no configurado")
+        return PlainTextResponse("Forbidden", status_code=403)
+    return PlainTextResponse(content=hub_challenge or "", status_code=200)
+
+
+@app.post("/webhooks/whatsapp")
+async def meta_whatsapp_webhook(request: Request) -> Response:
+    """
+    Webhook WhatsApp Cloud API (Meta). JSON entrante; respuesta al usuario vía Graph API.
+
+    - Identifica la clínica por metadata.phone_number_id → whatsapp_phone_number_id en clinics_mock.json.
+    - demo_clinic_2 sin phone_number_id sigue usando solo Twilio hasta que la agregues.
+    """
+    raw = await request.body()
+    sig = request.headers.get("X-Hub-Signature-256")
+    skip_sig = settings.META_WEBHOOK_SKIP_SIGNATURE_VERIFY
+    secret = (settings.META_APP_SECRET or "").strip()
+    if not skip_sig:
+        if not secret or not verify_webhook_signature(raw, sig, secret):
+            logging.warning("Meta webhook POST: firma inválida o META_APP_SECRET ausente")
+            return Response(status_code=403)
+
+    try:
+        data = json.loads(raw.decode("utf-8")) if raw else {}
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return Response(status_code=400)
+
+    events = extract_incoming_whatsapp_events(data)
+    if not events:
+        return Response(status_code=200)
+
+    token = (settings.META_WHATSAPP_ACCESS_TOKEN or "").strip()
+    if not token:
+        logging.error("META_WHATSAPP_ACCESS_TOKEN no configurado; no se puede responder por WhatsApp")
+        return Response(status_code=200)
+
+    graph_ver = settings.META_GRAPH_API_VERSION
+
+    for ev in events:
+        clinic_id = WHATSAPP_PHONE_NUMBER_ID_TO_CLINIC.get(ev.phone_number_id)
+        if not clinic_id:
+            logging.warning(
+                "Meta webhook: phone_number_id no asignado a ninguna clínica: %s. "
+                "Añade whatsapp_phone_number_id en clinics_mock.json",
+                ev.phone_number_id,
+            )
+            continue
+
+        clinic = CLINICS_BY_ID.get(clinic_id)
+        if not clinic:
+            continue
+
+        from_number = _normalize_wa_id_for_storage(ev.wa_from)
+        if ev.is_text:
+            try:
+                reply_text = _generate_and_persist_reply(
+                    clinic_id=clinic_id,
+                    from_number=from_number,
+                    body=ev.text_body,
+                    system_prompt=clinic.system_prompt,
+                    clinic_name=clinic.name,
+                    assistant_name=clinic.assistant_name,
+                    system_prompt_en=getattr(clinic, "system_prompt_en", None),
+                )
+            except GeminiServiceError as e:
+                logging.warning("GeminiServiceError in Meta webhook: %s", e)
+                reply_text = (
+                    "Ha ocurrido un problema temporal al procesar tu mensaje. "
+                    "Por favor, inténtalo de nuevo más tarde."
+                )
+            except Exception:
+                logging.exception("Error inesperado en Meta webhook")
+                reply_text = (
+                    "Ha ocurrido un error inesperado al procesar tu mensaje. "
+                    "Si el problema persiste, contacta con la clínica por teléfono."
+                )
+        else:
+            lang = _resolve_whatsapp_reply_language(clinic_id, from_number)
+            reply_text = reply_for_meta_media_type(meta_type=ev.media_type, lang=lang)
+
+        try:
+            await send_text_message(
+                graph_version=graph_ver,
+                phone_number_id=ev.phone_number_id,
+                to_wa_id=ev.wa_from,
+                body=reply_text,
+                access_token=token,
+            )
+        except Exception:
+            logging.exception("Error enviando respuesta por Graph API (WhatsApp)")
+
+    return Response(status_code=200)
+
+
 @app.post("/whatsapp", response_class=Response)
 async def whatsapp_webhook(
     clinic_id: str = Query(..., description="Identificador de la clínica (?clinic_id=xxx)"),
     from_number: str = Form(..., alias="From", description="Número del paciente enviado por Twilio."),
-    body: str = Form(..., alias="Body", description="Mensaje de texto enviado por el paciente."),
+    body: str = Form(default="", alias="Body", description="Mensaje de texto enviado por el paciente."),
+    num_media: str = Form(default="0", alias="NumMedia"),
+    media_content_type_0: str | None = Form(default=None, alias="MediaContentType0"),
 ) -> Response:
     """
     Webhook principal de WhatsApp (Twilio).
@@ -909,6 +1147,7 @@ async def whatsapp_webhook(
     - Identifica la clínica mediante ?clinic_id=xxx.
     - Lee la configuración de la clínica desde data/clinics_mock.json.
     - Orquesta la llamada a Gemini y devuelve TwiML.
+    - Solo adjuntos sin texto: plantilla fija (sin Gemini ni Firestore).
     """
     clinic = CLINICS_BY_ID.get(clinic_id)
     if clinic is None:
@@ -918,10 +1157,27 @@ async def whatsapp_webhook(
         return Response(content=str(resp), media_type="application/xml")
 
     try:
+        n_media = int((num_media or "0").strip() or "0")
+    except ValueError:
+        n_media = 0
+    body_stripped = (body or "").strip()
+
+    if n_media > 0 and not body_stripped:
+        lang = _resolve_whatsapp_reply_language(clinic_id, from_number)
+        reply_text = reply_for_twilio_media(mime_type=media_content_type_0, lang=lang)
+        twiml_response = MessagingResponse()
+        twiml_response.message(reply_text)
+        return Response(content=str(twiml_response), media_type="application/xml")
+
+    if not body_stripped and n_media == 0:
+        empty = MessagingResponse()
+        return Response(content=str(empty), media_type="application/xml")
+
+    try:
         reply_text = _generate_and_persist_reply(
             clinic_id=clinic_id,
             from_number=from_number,
-            body=body,
+            body=body_stripped,
             system_prompt=clinic.system_prompt,
             clinic_name=clinic.name,
             assistant_name=clinic.assistant_name,
@@ -986,6 +1242,52 @@ async def healthcheck_gcp() -> dict:
         result["gemini"] = "ok" if reply else "empty_response"
     except Exception as e:  # noqa: BLE001
         result["gemini"] = f"error: {type(e).__name__}: {e}"
+
+    return result
+
+
+@app.get("/health/meta")
+async def health_meta() -> dict:
+    """
+    Comprueba que las variables Meta estén cargadas (sin exponer secretos)
+    y qué phone_number_id están mapeados a clínicas.
+    """
+    return {
+        "meta_waba_id_configured": bool((settings.META_WABA_ID or "").strip()),
+        "meta_access_token_configured": bool((settings.META_WHATSAPP_ACCESS_TOKEN or "").strip()),
+        "meta_verify_token_configured": bool((settings.META_WEBHOOK_VERIFY_TOKEN or "").strip()),
+        "meta_app_secret_configured": bool((settings.META_APP_SECRET or "").strip()),
+        "meta_webhook_skip_signature": settings.META_WEBHOOK_SKIP_SIGNATURE_VERIFY,
+        "graph_api_version": settings.META_GRAPH_API_VERSION,
+        "whatsapp_phone_number_ids_mapped": WHATSAPP_PHONE_NUMBER_ID_TO_CLINIC,
+    }
+
+
+@app.post("/jobs/sync-calendar-to-bigquery", response_model=None)
+async def job_sync_calendar_to_bigquery(
+    token: str = Query("", description="Debe coincidir con SCHEDULER_SYNC_SECRET en .env"),
+):
+    """
+    Job HTTP para Cloud Scheduler: reconcilia Google Calendar → BigQuery
+    (citas activas con ``calendar_event_id`` del bot).
+
+    Configura ``SCHEDULER_SYNC_SECRET`` y llama con ``?token=...``.
+    """
+    expected = (settings.SCHEDULER_SYNC_SECRET or "").strip()
+    if not expected or token != expected:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+    pairs = [
+        (cid, (getattr(cfg, "calendar_id", None) or "").strip())
+        for cid, cfg in CLINICS_BY_ID.items()
+        if getattr(cfg, "calendar_sync_enabled", False) and (getattr(cfg, "calendar_id", None) or "").strip()
+    ]
+
+    db = SessionLocal()
+    try:
+        result = run_calendar_to_bigquery_sync(db, clinic_calendar_pairs=pairs)
+    finally:
+        db.close()
 
     return result
 

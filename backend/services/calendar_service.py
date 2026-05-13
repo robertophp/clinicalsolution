@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import date as date_type
+from datetime import datetime, timedelta, time as time_type, timezone
+from typing import Any, Optional
 
 import google.auth
 from googleapiclient.discovery import build
@@ -147,6 +148,55 @@ class CalendarService:
             raise CalendarServiceError(f"Error de Google Calendar al borrar evento: {exc}") from exc
         except Exception as exc:  # noqa: BLE001
             raise CalendarServiceError(f"Error inesperado al borrar evento en Calendar: {exc}") from exc
+
+    def get_event(self, *, calendar_id: str, event_id: str) -> dict[str, Any] | None:
+        """
+        Obtiene un evento por ID. Devuelve None si no existe (404).
+        """
+        if not calendar_id or not event_id:
+            return None
+        try:
+            client = self._get_client()
+            return (
+                client.events()
+                .get(calendarId=calendar_id, eventId=event_id)
+                .execute()
+            )
+        except HttpError as exc:  # type: ignore[import-untyped]
+            if exc.resp is not None and getattr(exc.resp, "status", None) == 404:
+                return None
+            raise CalendarServiceError(f"Error de Google Calendar al leer evento: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            raise CalendarServiceError(f"Error inesperado al leer evento en Calendar: {exc}") from exc
+
+    @staticmethod
+    def event_start_to_sv_date_time(event: dict[str, Any]) -> tuple[date_type, time_type] | None:
+        """
+        Interpreta start del evento API v3 y devuelve (date, time) en hora local El Salvador (UTC-6),
+        alineado con el resto de la app (sin depender de tzdata/zoneinfo).
+        """
+        start = event.get("start") or {}
+        dt_str = start.get("dateTime")
+        if dt_str:
+            s = (dt_str or "").replace("Z", "+00:00")
+            try:
+                dt = datetime.fromisoformat(s)
+            except ValueError:
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            tz_sv = timezone(timedelta(hours=-6))
+            local = dt.astimezone(tz_sv)
+            t = local.time().replace(microsecond=0)
+            return local.date(), t
+        day_only = (start.get("date") or "").strip()
+        if day_only:
+            try:
+                d = datetime.strptime(day_only, "%Y-%m-%d").date()
+            except ValueError:
+                return None
+            return d, time_type(0, 0)
+        return None
 
 
 calendar_service = CalendarService()

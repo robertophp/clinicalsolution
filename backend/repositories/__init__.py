@@ -7,6 +7,8 @@ from .cita_repository import (
     create_cita,
     get_latest_activa_cita_for_phone,
     get_latest_cita_for_phone,
+    list_activa_citas_with_calendar_link,
+    update_cita_fecha_hora_from_calendar,
     update_cita_status,
 )
 
@@ -17,5 +19,7 @@ __all__ = [
     "create_cita",
     "get_latest_activa_cita_for_phone",
     "get_latest_cita_for_phone",
+    "list_activa_citas_with_calendar_link",
+    "update_cita_fecha_hora_from_calendar",
     "update_cita_status",
 ]

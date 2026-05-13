@@ -4,7 +4,7 @@ Estados de cita: activa (por defecto), cancelada, reagendada.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -117,6 +117,49 @@ def get_latest_cita_for_phone(
         .order_by(Cita.timestamp.desc())
         .first()
     )
+
+
+def list_activa_citas_with_calendar_link(
+    db: Session,
+    *,
+    clinic_id: str,
+) -> list[Cita]:
+    """
+    Citas activas del bot con vínculo a Google Calendar (calendar_event_id rellenado).
+    Base para reconciliar Calendar → BigQuery (solo citas originadas por el asistente).
+    """
+    cid = (clinic_id or "").strip()
+    if not cid:
+        return []
+
+    return (
+        db.query(Cita)
+        .filter(
+            Cita.clinic_id == cid,
+            Cita.status == CITA_STATUS_ACTIVA,
+            Cita.calendar_event_id.isnot(None),
+            Cita.calendar_event_id != "",
+        )
+        .all()
+    )
+
+
+def update_cita_fecha_hora_from_calendar(
+    db: Session,
+    cita: Cita,
+    *,
+    fecha_cita: date,
+    hora_cita: time,
+) -> Cita:
+    """Actualiza fecha/hora de la cita tras detectar cambio en Google Calendar."""
+    cita.fecha_cita = fecha_cita
+    cita.hora_cita = hora_cita.replace(microsecond=0)
+    cita.sync_status = "ok"
+    cita.sync_error_message = None
+    db.add(cita)
+    db.commit()
+    db.refresh(cita)
+    return cita
 
 
 def get_latest_activa_cita_for_phone(

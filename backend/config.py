@@ -26,6 +26,19 @@ class Settings(BaseSettings):
     # BigQuery: dataset donde está la tabla citas (ej. clinica_datos.citas)
     BIGQUERY_DATASET: str = "clinica_datos"
 
+    # Cloud Scheduler (u otro job): POST /jobs/sync-calendar-to-bigquery?token=...
+    # Si no está definido, el endpoint rechaza todas las peticiones (401).
+    SCHEDULER_SYNC_SECRET: Optional[str] = None
+
+    # WhatsApp Cloud API (Meta) — webhook y Graph API
+    META_APP_SECRET: Optional[str] = None
+    META_WABA_ID: Optional[str] = None
+    META_WHATSAPP_ACCESS_TOKEN: Optional[str] = None
+    META_WEBHOOK_VERIFY_TOKEN: Optional[str] = None
+    META_GRAPH_API_VERSION: str = "v21.0"
+    # Solo desarrollo local: no validar firma (no usar en producción).
+    META_WEBHOOK_SKIP_SIGNATURE_VERIFY: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -1,6 +1,1866 @@
 {
   "services": [
     {
+      "id": "evaluacion_limpieza_y_radiografia_panoramica",
+      "name": "Evaluación, limpieza y radiografía panorámica",
+      "name_en": "Evaluación, limpieza y radiografía panorámica",
+      "price": "50.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "evaluación, limpieza y radiografía panorámica"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "evaluacion",
+      "name": "Evaluacion",
+      "name_en": "Evaluacion",
+      "price": "25.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "evaluacion"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "gingivectomia_completa",
+      "name": "Gingivectomia completa",
+      "name_en": "Gingivectomia completa",
+      "price": "250.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "gingivectomia completa"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_laminado_pieza",
+      "name": "Endodoncia + Laminado (pieza",
+      "name_en": "Endodoncia + Laminado (pieza",
+      "price": "400.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + laminado (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_incrustacion_empress_pieza",
+      "name": "Endodoncia + incrustacion empress (pieza",
+      "name_en": "Endodoncia + incrustacion empress (pieza",
+      "price": "575.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + incrustacion empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_corona_zirconio",
+      "name": "Endodoncia + corona zirconio",
+      "name_en": "Endodoncia + corona zirconio",
+      "price": "675.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + corona zirconio"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "evaluacion_limpieza",
+      "name": "Evaluacion + limpieza",
+      "name_en": "Evaluacion + limpieza",
+      "price": "35.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "evaluacion + limpieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "evaluacion_radiografia_panoramica",
+      "name": "Evaluacion + radiografia panoramica",
+      "name_en": "Evaluacion + radiografia panoramica",
+      "price": "35.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "evaluacion + radiografia panoramica"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_pieza",
+      "name": "Endodoncia (pieza",
+      "name_en": "Endodoncia (pieza",
+      "price": "275.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_retiro_de_poste_colocacion_de_poste_de_fibra",
+      "name": "Retratamiento de endodoncia + retiro de poste + colocación de poste de fibra (pieza",
+      "name_en": "Retratamiento de endodoncia + retiro de poste + colocación de poste de fibra (pieza",
+      "price": "625.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + retiro de poste + colocación de poste de fibra (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_corona_empress",
+      "name": "Retratamiento de endodoncia + corona empress",
+      "name_en": "Retratamiento de endodoncia + corona empress",
+      "price": "675.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + corona empress"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_pieza",
+      "name": "Retratamiento de Endodoncia (pieza",
+      "name_en": "Retratamiento de Endodoncia (pieza",
+      "price": "375.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "cirugia_de_mucocele_maxilofacial",
+      "name": "Cirugía de Mucocele (Maxilofacial)",
+      "name_en": "Cirugía de Mucocele (Maxilofacial)",
+      "price": "250.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "cirugía de mucocele (maxilofacial)"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "incrustacion_emax_piezas",
+      "name": "Incrustación emax (piezas",
+      "name_en": "Incrustación emax (piezas",
+      "price": "400.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "incrustación emax (piezas"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_corona_emax",
+      "name": "Endodoncia + corona emax",
+      "name_en": "Endodoncia + corona emax",
+      "price": "675.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + corona emax"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_retiro_de_poste_poste_de_fibra_corona_emax_g",
+      "name": "Retratamiento de Endodoncia + retiro de poste + poste de fibra + corona emax + gingivectomia (pieza",
+      "name_en": "Retratamiento de Endodoncia + retiro de poste + poste de fibra + corona emax + gingivectomia (pieza",
+      "price": "1075.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + retiro de poste + poste de fibra + corona emax + gingivectomia (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_poste_de_fibra_gingivectomia_corona_zirconio",
+      "name": "Retratamiento de Endodoncia + poste de fibra + gingivectomia + corona zirconio (pieza",
+      "name_en": "Retratamiento de Endodoncia + poste de fibra + gingivectomia + corona zirconio (pieza",
+      "price": "975.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + poste de fibra + gingivectomia + corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_gingivectomia_corona_empress_pieza",
+      "name": "Endodoncia + gingivectomia + corona empress (pieza",
+      "name_en": "Endodoncia + gingivectomia + corona empress (pieza",
+      "price": "625.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + gingivectomia + corona empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_corona_emax",
+      "name": "Retratamiento de Endodoncia + corona emax",
+      "name_en": "Retratamiento de Endodoncia + corona emax",
+      "price": "775.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + corona emax"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_gingivectomia_poste_de_fibra_corona_empress_pieza",
+      "name": "Endodoncia + gingivectomia + poste de fibra + corona empress (pieza",
+      "name_en": "Endodoncia + gingivectomia + poste de fibra + corona empress (pieza",
+      "price": "775.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + gingivectomia + poste de fibra + corona empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_poste_de_fibra_corona_zirconio_pieza",
+      "name": "Retratamiento de Endodoncia + poste de fibra + corona zirconio (pieza",
+      "name_en": "Retratamiento de Endodoncia + poste de fibra + corona zirconio (pieza",
+      "price": "925.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + poste de fibra + corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "corona_emax_pieza",
+      "name": "Corona EMAX (pieza",
+      "name_en": "Corona EMAX (pieza",
+      "price": "400.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "corona emax (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_poste_de_fibra",
+      "name": "Endodoncia + poste de fibra",
+      "name_en": "Endodoncia + poste de fibra",
+      "price": "425.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + poste de fibra"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retiro_de_poste_poste_de_fibra_pieza",
+      "name": "Retiro de poste + poste de fibra (pieza",
+      "name_en": "Retiro de poste + poste de fibra (pieza",
+      "price": "250.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retiro de poste + poste de fibra (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "colocacion_de_poste_de_fibra_de_vidrio_pieza",
+      "name": "Colocacion de poste de fibra de vidrio (pieza",
+      "name_en": "Colocacion de poste de fibra de vidrio (pieza",
+      "price": "150.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "colocacion de poste de fibra de vidrio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retiro_de_poste_pieza",
+      "name": "Retiro de poste (pieza",
+      "name_en": "Retiro de poste (pieza",
+      "price": "100.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retiro de poste (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "blanqueamiento_dental",
+      "name": "Blanqueamiento dental",
+      "name_en": "Blanqueamiento dental",
+      "price": "200.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "blanqueamiento dental"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "tomografia_por_cuadrante",
+      "name": "Tomografía por cuadrante",
+      "name_en": "Tomografía por cuadrante",
+      "price": "100.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "tomografía por cuadrante"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "tomografia_por_pieza",
+      "name": "Tomografía por pieza",
+      "name_en": "Tomografía por pieza",
+      "price": "80.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "tomografía por pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "tomografia_completa",
+      "name": "Tomografia completa",
+      "name_en": "Tomografia completa",
+      "price": "150.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "tomografia completa"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_gingivectomia_poste_de_fibra_pieza",
+      "name": "Endodoncia + gingivectomia + poste de fibra (pieza",
+      "name_en": "Endodoncia + gingivectomia + poste de fibra (pieza",
+      "price": "475.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + gingivectomia + poste de fibra (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_reconstruccion_de_fibra_de_vidrio_pieza",
+      "name": "Retratamiento de endodoncia + reconstruccion de fibra de vidrio (pieza",
+      "name_en": "Retratamiento de endodoncia + reconstruccion de fibra de vidrio (pieza",
+      "price": "525.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + reconstruccion de fibra de vidrio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_obturacion_con_resina_pieza",
+      "name": "Endodoncia + obturacion con resina (pieza",
+      "name_en": "Endodoncia + obturacion con resina (pieza",
+      "price": "325.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + obturacion con resina (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_poste_de_fibra",
+      "name": "Retratamiento de endodoncia + poste de fibra",
+      "name_en": "Retratamiento de endodoncia + poste de fibra",
+      "price": "525.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + poste de fibra"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_blanqueamiento_interno_poste_de_fibra_corona_zirconio_pieza",
+      "name": "Endodoncia + blanqueamiento interno + poste de fibra + corona zirconio (pieza",
+      "name_en": "Endodoncia + blanqueamiento interno + poste de fibra + corona zirconio (pieza",
+      "price": "975.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + blanqueamiento interno + poste de fibra + corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_poste_de_fibra_corona_zirconio_pieza",
+      "name": "Endodoncia + poste de fibra + corona zirconio (pieza",
+      "name_en": "Endodoncia + poste de fibra + corona zirconio (pieza",
+      "price": "825.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + poste de fibra + corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_retiro_de_poste_poste_de_fibra_gingivectomia",
+      "name": "Retratamiento de endodoncia + retiro de poste + poste de fibra + gingivectomia + corona empress (pieza",
+      "name_en": "Retratamiento de endodoncia + retiro de poste + poste de fibra + gingivectomia + corona empress (pieza",
+      "price": "975.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + retiro de poste + poste de fibra + gingivectomia + corona empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_retiro_de_poste_poste_de_fibra_pieza",
+      "name": "Retratamiento de endodoncia + retiro de poste + poste de fibra (pieza",
+      "name_en": "Retratamiento de endodoncia + retiro de poste + poste de fibra (pieza",
+      "price": "625.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + retiro de poste + poste de fibra (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_retiro_de_poste_poste_de_fibra_gingivectomia_2",
+      "name": "Retratamiento de endodoncia + retiro de poste + poste de fibra + gingivectomia (pieza",
+      "name_en": "Retratamiento de endodoncia + retiro de poste + poste de fibra + gingivectomia (pieza",
+      "price": "675.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + retiro de poste + poste de fibra + gingivectomia (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_gingivectomia_poste_de_fibra_pieza",
+      "name": "Retratamiento de endodoncia + gingivectomia + poste de fibra (pieza",
+      "name_en": "Retratamiento de endodoncia + gingivectomia + poste de fibra (pieza",
+      "price": "575.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + gingivectomia + poste de fibra (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_retiro_de_poste_poste_de_fibra_gingivectomia_3",
+      "name": "Retratamiento de endodoncia + retiro de poste + poste de fibra + gingivectomia (pieza",
+      "name_en": "Retratamiento de endodoncia + retiro de poste + poste de fibra + gingivectomia (pieza",
+      "price": "675.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + retiro de poste + poste de fibra + gingivectomia (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_gingivectomia_corona_emax_pieza",
+      "name": "Endodoncia + gingivectomia + corona emax (pieza",
+      "name_en": "Endodoncia + gingivectomia + corona emax (pieza",
+      "price": "725.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + gingivectomia + corona emax (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_gingivectomia",
+      "name": "Endodoncia + gingivectomia",
+      "name_en": "Endodoncia + gingivectomia",
+      "price": "325.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + gingivectomia"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_gingivectomia_poste_de_fibra_corona_zirconio_pieza",
+      "name": "Endodoncia + gingivectomia + poste de fibra + corona zirconio (pieza",
+      "name_en": "Endodoncia + gingivectomia + poste de fibra + corona zirconio (pieza",
+      "price": "875.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + gingivectomia + poste de fibra + corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_poste_de_fibra_pieza",
+      "name": "Endodoncia + poste de fibra (pieza",
+      "name_en": "Endodoncia + poste de fibra (pieza",
+      "price": "425.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + poste de fibra (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "puente_fijo_de_piezas_de_zirconio_piezas",
+      "name": "Puente fijo de piezas de zirconio (piezas",
+      "name_en": "Puente fijo de piezas de zirconio (piezas",
+      "price": "400.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "puente fijo de piezas de zirconio (piezas"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retiro_de_protesis_fija_mas_provisional",
+      "name": "Retiro de protesis fija mas provisional",
+      "name_en": "Retiro de protesis fija mas provisional",
+      "price": "100.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retiro de protesis fija mas provisional"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_gingivectomia_corona_zirconio_pieza",
+      "name": "Retratamiento de endodoncia + gingivectomia + corona zirconio (pieza",
+      "name_en": "Retratamiento de endodoncia + gingivectomia + corona zirconio (pieza",
+      "price": "825.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + gingivectomia + corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "gingivectomia_corona_empress_pieza",
+      "name": "Gingivectomia + corona empress (pieza",
+      "name_en": "Gingivectomia + corona empress (pieza",
+      "price": "350.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "gingivectomia + corona empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "exodoncia_complicada",
+      "name": "Exodoncia complicada",
+      "name_en": "Exodoncia complicada",
+      "price": "150.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "exodoncia complicada"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "injerto_de_hueso_y_membrana_por_pieza_el_injerto_de_hueso_y_membrana_es",
+      "name": "Injerto de hueso y membrana por pieza *El injerto de hueso y membrana es colocado en caso sea necesario, depende del resultado de la tomografía si es necesario colocarlo al momento del procedimiento.",
+      "name_en": "Injerto de hueso y membrana por pieza *El injerto de hueso y membrana es colocado en caso sea necesario, depende del resultado de la tomografía si es necesario colocarlo al momento del procedimiento.",
+      "price": "300.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "injerto de hueso y membrana por pieza *el injerto de hueso y membrana es colocado en caso sea necesario, depende del res"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_retiro_de_poste_poste_de_fibra_corona_empres",
+      "name": "Retratamiento de Endodoncia + retiro de poste + poste de fibra + corona empress",
+      "name_en": "Retratamiento de Endodoncia + retiro de poste + poste de fibra + corona empress",
+      "price": "925.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + retiro de poste + poste de fibra + corona empress"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "regeneracion_osea_con_injerto_de_hueso_y_membrana",
+      "name": "Regeneracion osea con injerto de hueso y membrana",
+      "name_en": "Regeneracion osea con injerto de hueso y membrana",
+      "price": "600.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "regeneracion osea con injerto de hueso y membrana"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "colocacion_de_implante",
+      "name": "Colocación de implante",
+      "name_en": "Colocación de implante",
+      "price": "1000.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "colocación de implante"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "corona_material_tessera_pieza",
+      "name": "Corona material tessera (pieza",
+      "name_en": "Corona material tessera (pieza",
+      "price": "400.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "corona material tessera (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_corona_zirconio",
+      "name": "Retratamiento de endodoncia + corona zirconio",
+      "name_en": "Retratamiento de endodoncia + corona zirconio",
+      "price": "775.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + corona zirconio"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "carilla_emax",
+      "name": "Carilla EMAX",
+      "name_en": "Carilla EMAX",
+      "price": "500.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "carilla emax"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_carilla_emax_pieza",
+      "name": "Endodoncia + carilla emax (pieza",
+      "name_en": "Endodoncia + carilla emax (pieza",
+      "price": "775.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + carilla emax (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_gingivectomia_corona_empress_pieza",
+      "name": "Retratamiento de endodoncia + gingivectomia + corona empress (pieza",
+      "name_en": "Retratamiento de endodoncia + gingivectomia + corona empress (pieza",
+      "price": "725.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + gingivectomia + corona empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_carilla_emax_pieza",
+      "name": "Retratamiento de endodoncia + carilla emax (pieza",
+      "name_en": "Retratamiento de endodoncia + carilla emax (pieza",
+      "price": "875.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + carilla emax (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_poste_de_fibra_gingivectomia_corona_zirconio_pieza",
+      "name": "Endodoncia + poste de fibra + gingivectomia + corona zirconio (pieza",
+      "name_en": "Endodoncia + poste de fibra + gingivectomia + corona zirconio (pieza",
+      "price": "875.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + poste de fibra + gingivectomia + corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_gingivectomia_poste_de_fibra_incrustacion_empress_pieza",
+      "name": "Endodoncia + gingivectomia + poste de fibra + incrustacion empress (pieza",
+      "name_en": "Endodoncia + gingivectomia + poste de fibra + incrustacion empress (pieza",
+      "price": "775.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + gingivectomia + poste de fibra + incrustacion empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_poste_de_fibra_corona_empress_piezas",
+      "name": "Endodoncia + poste de fibra + corona empress (piezas",
+      "name_en": "Endodoncia + poste de fibra + corona empress (piezas",
+      "price": "725.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + poste de fibra + corona empress (piezas"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "carilla_emax_gingivectomia",
+      "name": "Carilla EMAX + gingivectomia",
+      "name_en": "Carilla EMAX + gingivectomia",
+      "price": "550.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "carilla emax + gingivectomia"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "recubrimiento_pulpar_incrustacion",
+      "name": "Recubrimiento pulpar + incrustacion",
+      "name_en": "Recubrimiento pulpar + incrustacion",
+      "price": "400.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "recubrimiento pulpar + incrustacion"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "gingivectomia_por_pieza_pieza",
+      "name": "Gingivectomia por pieza (pieza",
+      "name_en": "Gingivectomia por pieza (pieza",
+      "price": "50.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "gingivectomia por pieza (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "colocacion_de_poste_gingivectomia_corona_empress_pieza",
+      "name": "Colocacion de poste + gingivectomia + corona empress (pieza",
+      "name_en": "Colocacion de poste + gingivectomia + corona empress (pieza",
+      "price": "500.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "colocacion de poste + gingivectomia + corona empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_retiro_de_poste_poste_corona_pieza",
+      "name": "Endodoncia + retiro de poste + poste + corona (pieza",
+      "name_en": "Endodoncia + retiro de poste + poste + corona (pieza",
+      "price": "925.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + retiro de poste + poste + corona (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_gingivectomia_hemiseccion_poste_de_fibra_cor",
+      "name": "Retratamiento de endodoncia + gingivectomia + hemiseccion + poste de fibra + corona de zirconio",
+      "name_en": "Retratamiento de endodoncia + gingivectomia + hemiseccion + poste de fibra + corona de zirconio",
+      "price": "1125.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + gingivectomia + hemiseccion + poste de fibra + corona de zirconio"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retiro_de_poste_colocacion_de_poste_de_fibra_corona_emax",
+      "name": "Retiro de poste + colocacion de poste de fibra + corona emax",
+      "name_en": "Retiro de poste + colocacion de poste de fibra + corona emax",
+      "price": "650.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retiro de poste + colocacion de poste de fibra + corona emax"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_corona_empress",
+      "name": "Endodoncia + corona empress",
+      "name_en": "Endodoncia + corona empress",
+      "price": "575.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + corona empress"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_gingivectomia_poste_de_fibra_corona_empress",
+      "name": "Retratamiento de endodoncia + gingivectomia + poste de fibra + corona empress (pieza",
+      "name_en": "Retratamiento de endodoncia + gingivectomia + poste de fibra + corona empress (pieza",
+      "price": "875.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + gingivectomia + poste de fibra + corona empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "corona_de_zirconio_sobre_implante_6_meses_despues_de_colocar_implante",
+      "name": "Corona de zirconio sobre implante (6 meses después de colocar implante)",
+      "name_en": "Corona de zirconio sobre implante (6 meses después de colocar implante)",
+      "price": "500.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "corona de zirconio sobre implante (6 meses después de colocar implante)"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_poste_de_fibra_corona_empress_pieza",
+      "name": "Retratamiento de endodoncia + poste de fibra + corona empress (pieza",
+      "name_en": "Retratamiento de endodoncia + poste de fibra + corona empress (pieza",
+      "price": "825.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + poste de fibra + corona empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "corona_empress_cad_pieza",
+      "name": "Corona Empress cad (pieza",
+      "name_en": "Corona Empress cad (pieza",
+      "price": "300.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "corona empress cad (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_retiro_de_poste_poste_de_fibra_corona_emax",
+      "name": "Retratamiento de Endodoncia + retiro de poste + poste de fibra + corona emax",
+      "name_en": "Retratamiento de Endodoncia + retiro de poste + poste de fibra + corona emax",
+      "price": "1025.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + retiro de poste + poste de fibra + corona emax"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "colocacion_de_poste_de_fibra_corona_zirconio_pieza",
+      "name": "Colocacion de poste de fibra + corona zirconio (pieza",
+      "name_en": "Colocacion de poste de fibra + corona zirconio (pieza",
+      "price": "550.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "colocacion de poste de fibra + corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_incrustacion_empress_pieza",
+      "name": "Retratamiento de Endodoncia + incrustación empress (pieza",
+      "name_en": "Retratamiento de Endodoncia + incrustación empress (pieza",
+      "price": "675.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + incrustación empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "recubrimiento_pulpar_reconstruccion_de_borde_superior",
+      "name": "Recubrimiento pulpar + reconstruccion de borde superior",
+      "name_en": "Recubrimiento pulpar + reconstruccion de borde superior",
+      "price": "150.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "recubrimiento pulpar + reconstruccion de borde superior"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "colocacion_de_poste_de_fibra_corona_empress_pieza",
+      "name": "Colocacion de poste de fibra + corona empress (pieza",
+      "name_en": "Colocacion de poste de fibra + corona empress (pieza",
+      "price": "450.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "colocacion de poste de fibra + corona empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "reconstruccion_de_borde_superior_pieza",
+      "name": "Reconstrucción de borde superior (pieza",
+      "name_en": "Reconstrucción de borde superior (pieza",
+      "price": "50.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "reconstrucción de borde superior (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_laminado_pieza",
+      "name": "Retratamiento de endodoncia + laminado (pieza",
+      "name_en": "Retratamiento de endodoncia + laminado (pieza",
+      "price": "500.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + laminado (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "corona_zirconio_pieza",
+      "name": "Corona zirconio (pieza",
+      "name_en": "Corona zirconio (pieza",
+      "price": "400.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "laminado_blanqueamiento_interno_pieza",
+      "name": "Laminado + blanqueamiento interno (pieza",
+      "name_en": "Laminado + blanqueamiento interno (pieza",
+      "price": "275.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "laminado + blanqueamiento interno (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "blanqueamiento_interno",
+      "name": "Blanqueamiento interno",
+      "name_en": "Blanqueamiento interno",
+      "price": "150.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "blanqueamiento interno"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "incrustacion_empress_gingivectomia_pieza",
+      "name": "Incrustacion empress + gingivectomia (pieza",
+      "name_en": "Incrustacion empress + gingivectomia (pieza",
+      "price": "350.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "incrustacion empress + gingivectomia (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "laminado_gingivectomia_sellante_de_fosas_y_fisuras_pieza",
+      "name": "Laminado + gingivectomia + sellante de fosas y fisuras (pieza",
+      "name_en": "Laminado + gingivectomia + sellante de fosas y fisuras (pieza",
+      "price": "200.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "laminado + gingivectomia + sellante de fosas y fisuras (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "recubrimiento_pulpar_gingivectomia_incrustacion_zirconio_pieza",
+      "name": "Recubrimiento pulpar + gingivectomia + incrustacion zirconio (pieza",
+      "name_en": "Recubrimiento pulpar + gingivectomia + incrustacion zirconio (pieza",
+      "price": "550.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "recubrimiento pulpar + gingivectomia + incrustacion zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "laminados_dentales_piezas",
+      "name": "Laminados dentales (piezas",
+      "name_en": "Laminados dentales (piezas",
+      "price": "125.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "laminados dentales (piezas"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "obturaciones_con_base_piezas",
+      "name": "Obturaciones con base (piezas",
+      "name_en": "Obturaciones con base (piezas",
+      "price": "45.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "obturaciones con base (piezas"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "colocacion_de_poste_de_fibra_gingivectomia_corona_zirconio_pieza",
+      "name": "Colocacion de poste de fibra + gingivectomia + corona zirconio (pieza",
+      "name_en": "Colocacion de poste de fibra + gingivectomia + corona zirconio (pieza",
+      "price": "600.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "colocacion de poste de fibra + gingivectomia + corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "reconstruccion_de_borde_inferior_pieza",
+      "name": "Reconstrucción de borde inferior (pieza",
+      "name_en": "Reconstrucción de borde inferior (pieza",
+      "price": "40.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "reconstrucción de borde inferior (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_gingivectomia_corona_emax_pieza_2",
+      "name": "Endodoncia + gingivectomia + corona emax (pieza",
+      "name_en": "Endodoncia + gingivectomia + corona emax (pieza",
+      "price": "725.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + gingivectomia + corona emax (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "corona_emax_poste_de_fibra",
+      "name": "Corona emax + poste de fibra",
+      "name_en": "Corona emax + poste de fibra",
+      "price": "550.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "corona emax + poste de fibra"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "gingivectomia_poste_de_fibra_corona_emax_pieza",
+      "name": "Gingivectomia + poste de fibra + corona emax (pieza",
+      "name_en": "Gingivectomia + poste de fibra + corona emax (pieza",
+      "price": "600.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "gingivectomia + poste de fibra + corona emax (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "incrustacion_empress_pieza",
+      "name": "Incrustación Empress (pieza",
+      "name_en": "Incrustación Empress (pieza",
+      "price": "300.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "incrustación empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "recubrimiento_pulpar_laminado_pieza",
+      "name": "Recubrimiento pulpar + Laminado (pieza",
+      "name_en": "Recubrimiento pulpar + Laminado (pieza",
+      "price": "225.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "recubrimiento pulpar + laminado (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "obturaciones_simples_piezas",
+      "name": "Obturaciones simples (piezas",
+      "name_en": "Obturaciones simples (piezas",
+      "price": "35.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "obturaciones simples (piezas"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "sellante_de_fosas_y_fisuras_piezas",
+      "name": "Sellante de fosas y fisuras (piezas",
+      "name_en": "Sellante de fosas y fisuras (piezas",
+      "price": "25.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "sellante de fosas y fisuras (piezas"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "recubrimiento_pulpar_pieza",
+      "name": "Recubrimiento pulpar (pieza",
+      "name_en": "Recubrimiento pulpar (pieza",
+      "price": "145.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "recubrimiento pulpar (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "exodoncia_simple_piezas",
+      "name": "Exodoncia simple (piezas",
+      "name_en": "Exodoncia simple (piezas",
+      "price": "60.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "exodoncia simple (piezas"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "exodoncia_de_cordal_piezas",
+      "name": "Exodoncia de cordal (piezas",
+      "name_en": "Exodoncia de cordal (piezas",
+      "price": "150.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "exodoncia de cordal (piezas"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "protesis_valplast_bilateral",
+      "name": "Prótesis valplast bilateral",
+      "name_en": "Prótesis valplast bilateral",
+      "price": "500.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "prótesis valplast bilateral"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "reconstruccion_con_resina",
+      "name": "Reconstruccion con resina",
+      "name_en": "Reconstruccion con resina",
+      "price": "50.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "reconstruccion con resina"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "guarda_oclusal",
+      "name": "Guarda oclusal",
+      "name_en": "Guarda oclusal",
+      "price": "55.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "guarda oclusal"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "evaluacion_con_especialista_maxilofacial",
+      "name": "Evaluacion con especialista maxilofacial",
+      "name_en": "Evaluacion con especialista maxilofacial",
+      "price": "50.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "evaluacion con especialista maxilofacial"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "evaluacion_dental",
+      "name": "Evaluación dental",
+      "name_en": "Evaluación dental",
+      "price": "25.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "evaluación dental"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "protesis_valplast_unilateral",
+      "name": "Protesis valplast unilateral",
+      "name_en": "Protesis valplast unilateral",
+      "price": "375.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "protesis valplast unilateral"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "artrocentesis",
+      "name": "Artrocentesis",
+      "name_en": "Artrocentesis",
+      "price": "1000.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "artrocentesis"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "guarda_miorelajante",
+      "name": "Guarda miorelajante",
+      "name_en": "Guarda miorelajante",
+      "price": "300.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "guarda miorelajante"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "alisado_radicular_para_los_iv_cuadrantes",
+      "name": "Alisado radicular para los IV cuadrantes",
+      "name_en": "Alisado radicular para los IV cuadrantes",
+      "price": "400.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "alisado radicular para los iv cuadrantes"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "evaluacion_con_ortodoncista",
+      "name": "Evaluación con ortodoncista",
+      "name_en": "Evaluación con ortodoncista",
+      "price": "50.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "evaluación con ortodoncista"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "alisado_radicular_por_pieza",
+      "name": "Alisado radicular por pieza",
+      "name_en": "Alisado radicular por pieza",
+      "price": "75.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "alisado radicular por pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "alisado_radicular_por_cuadrante",
+      "name": "Alisado radicular por cuadrante",
+      "name_en": "Alisado radicular por cuadrante",
+      "price": "100.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "alisado radicular por cuadrante"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "protesis_sobre_implante",
+      "name": "Protesis sobre implante",
+      "name_en": "Protesis sobre implante",
+      "price": "1000.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "protesis sobre implante"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "biopsia",
+      "name": "Biopsia",
+      "name_en": "Biopsia",
+      "price": "300.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "biopsia"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "hemiseccion",
+      "name": "Hemiseccion",
+      "name_en": "Hemiseccion",
+      "price": "150.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "hemiseccion"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "apicectomia",
+      "name": "Apicectomia",
+      "name_en": "Apicectomia",
+      "price": "375.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "apicectomia"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "radiografia_periapical",
+      "name": "Radiografia periapical",
+      "name_en": "Radiografia periapical",
+      "price": "5.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "radiografia periapical"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "protesis_completa",
+      "name": "Protesis completa",
+      "name_en": "Protesis completa",
+      "price": "250.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "protesis completa"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "radiografia_panoramica",
+      "name": "Radiografia panoramica",
+      "name_en": "Radiografia panoramica",
+      "price": "20.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "radiografia panoramica"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "radiografia_cefalometrica",
+      "name": "Radiografia cefalometrica",
+      "name_en": "Radiografia cefalometrica",
+      "price": "20.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "radiografia cefalometrica"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retenedor_fijo",
+      "name": "Retenedor fijo",
+      "name_en": "Retenedor fijo",
+      "price": "200.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retenedor fijo"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "provisional_pmma",
+      "name": "Provisional PMMA",
+      "name_en": "Provisional PMMA",
+      "price": "500.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "provisional pmma"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "sedacion_consiente",
+      "name": "Sedacion consiente",
+      "name_en": "Sedacion consiente",
+      "price": "250.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "sedacion consiente"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "reconstruccion_con_fibra_de_vidrio",
+      "name": "Reconstruccion con fibra de vidrio",
+      "name_en": "Reconstruccion con fibra de vidrio",
+      "price": "150.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "reconstruccion con fibra de vidrio"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "poste_de_fibra_corona_emax",
+      "name": "Poste de fibra + corona emax",
+      "name_en": "Poste de fibra + corona emax",
+      "price": "550.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "poste de fibra + corona emax"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retiro_de_poste_poste_de_fibra_corona_empress_pieza",
+      "name": "Retiro de poste + poste de fibra + corona empress (pieza",
+      "name_en": "Retiro de poste + poste de fibra + corona empress (pieza",
+      "price": "550.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retiro de poste + poste de fibra + corona empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "hemiseccion_endodoncia_poste_de_fibra_gingivectomia_corona_emax_pieza",
+      "name": "Hemiseccion + Endodoncia + poste de fibra + gingivectomia + corona emax (pieza",
+      "name_en": "Hemiseccion + Endodoncia + poste de fibra + gingivectomia + corona emax (pieza",
+      "price": "1025.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "hemiseccion + endodoncia + poste de fibra + gingivectomia + corona emax (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "recubrimiento_pulpar_gingivectomia_obturacion_pieza",
+      "name": "Recubrimiento pulpar + gingivectomia + obturacion (pieza",
+      "name_en": "Recubrimiento pulpar + gingivectomia + obturacion (pieza",
+      "price": "195.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "recubrimiento pulpar + gingivectomia + obturacion (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "apiceptomia_corona_de_zirconio",
+      "name": "Apiceptomia + corona de zirconio",
+      "name_en": "Apiceptomia + corona de zirconio",
+      "price": "775.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "apiceptomia + corona de zirconio"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_corona_tessera",
+      "name": "Endodoncia + corona tessera",
+      "name_en": "Endodoncia + corona tessera",
+      "price": "675.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + corona tessera"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "evaluacion_con_especialista_en_endodoncia",
+      "name": "Evaluacion con especialista en endodoncia",
+      "name_en": "Evaluacion con especialista en endodoncia",
+      "price": "40.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "evaluacion con especialista en endodoncia"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_reconstruccion_con_fibra_de_vidrio_pieza",
+      "name": "Endodoncia + reconstruccion con fibra de vidrio (pieza",
+      "name_en": "Endodoncia + reconstruccion con fibra de vidrio (pieza",
+      "price": "425.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + reconstruccion con fibra de vidrio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "cirugia_de_lipopapada",
+      "name": "Cirugia de lipopapada",
+      "name_en": "Cirugia de lipopapada",
+      "price": "1200.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "cirugia de lipopapada"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "cirugia_de_bichectomia",
+      "name": "Cirugia de bichectomia",
+      "name_en": "Cirugia de bichectomia",
+      "price": "500.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "cirugia de bichectomia"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_blanqueamiento_interno_carilla_pieza",
+      "name": "Retratamiento de endodoncia + blanqueamiento interno + carilla (pieza",
+      "name_en": "Retratamiento de endodoncia + blanqueamiento interno + carilla (pieza",
+      "price": "1025.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + blanqueamiento interno + carilla (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_blanqueamiento_interno_laminado_pieza",
+      "name": "Retratamiento de endodoncia + blanqueamiento interno + laminado (pieza",
+      "name_en": "Retratamiento de endodoncia + blanqueamiento interno + laminado (pieza",
+      "price": "650.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + blanqueamiento interno + laminado (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_alisado_radicular_poste_de_fibra_corona_emax",
+      "name": "Retratamiento de endodoncia + alisado radicular + poste de fibra + corona emax (pieza",
+      "name_en": "Retratamiento de endodoncia + alisado radicular + poste de fibra + corona emax (pieza",
+      "price": "1000.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + alisado radicular + poste de fibra + corona emax (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_blanqueamiento_interno_carilla_pieza",
+      "name": "Endodoncia + blanqueamiento interno + carilla (pieza",
+      "name_en": "Endodoncia + blanqueamiento interno + carilla (pieza",
+      "price": "925.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + blanqueamiento interno + carilla (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_poste_de_fibra_pieza",
+      "name": "Retratamiento de endodoncia + poste de fibra (pieza",
+      "name_en": "Retratamiento de endodoncia + poste de fibra (pieza",
+      "price": "525.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + poste de fibra (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "carilla_emax_blanqueamiento_interno",
+      "name": "Carilla emax + blanqueamiento interno",
+      "name_en": "Carilla emax + blanqueamiento interno",
+      "price": "650.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "carilla emax + blanqueamiento interno"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "poste_de_fibra_gingivectomia",
+      "name": "Poste de fibra + gingivectomia",
+      "name_en": "Poste de fibra + gingivectomia",
+      "price": "200.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "poste de fibra + gingivectomia"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "retratamiento_de_endodoncia_poste_de_fibra_de_vidrio_carilla_emax_pieza",
+      "name": "Retratamiento de endodoncia + poste de fibra de vidrio + carilla emax (pieza",
+      "name_en": "Retratamiento de endodoncia + poste de fibra de vidrio + carilla emax (pieza",
+      "price": "1025.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "retratamiento de endodoncia + poste de fibra de vidrio + carilla emax (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_gingivectomia_corona_zirconio_pieza",
+      "name": "Endodoncia + gingivectomia + corona zirconio (pieza",
+      "name_en": "Endodoncia + gingivectomia + corona zirconio (pieza",
+      "price": "725.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + gingivectomia + corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "gingivectomia_corona_zirconio_pieza",
+      "name": "Gingivectomia + corona zirconio (pieza",
+      "name_en": "Gingivectomia + corona zirconio (pieza",
+      "price": "450.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "gingivectomia + corona zirconio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "limpieza",
+      "name": "Limpieza",
+      "name_en": "Limpieza",
+      "price": "30.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "limpieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "gingivectomia_colocacion_de_poste_de_fibra_de_vidrio_pieza",
+      "name": "Gingivectomia + colocacion de poste de fibra de vidrio (pieza",
+      "name_en": "Gingivectomia + colocacion de poste de fibra de vidrio (pieza",
+      "price": "200.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "gingivectomia + colocacion de poste de fibra de vidrio (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "endodoncia_alargamiento_de_corona_corona_empress_pieza",
+      "name": "Endodoncia + alargamiento de corona + corona empress (pieza",
+      "name_en": "Endodoncia + alargamiento de corona + corona empress (pieza",
+      "price": "725.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "endodoncia + alargamiento de corona + corona empress (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "laminados_blanqueamiento_interno_pieza",
+      "name": "Laminados + blanqueamiento interno (pieza",
+      "name_en": "Laminados + blanqueamiento interno (pieza",
+      "price": "275.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "laminados + blanqueamiento interno (pieza"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "limpieza_dental",
+      "name": "Limpieza dental",
+      "name_en": "Limpieza dental",
+      "price": "30.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "limpieza dental"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "profundizacion_de_vestibulo",
+      "name": "Profundizacion de vestibulo",
+      "name_en": "Profundizacion de vestibulo",
+      "price": "500.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "profundizacion de vestibulo"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "protesis_completa_total_natural",
+      "name": "Protesis completa total natural",
+      "name_en": "Protesis completa total natural",
+      "price": "500.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "protesis completa total natural"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "protesis_completa_acrilico",
+      "name": "Protesis completa acrílico",
+      "name_en": "Protesis completa acrílico",
+      "price": "300.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "protesis completa acrílico"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
+      "id": "regularizacion_osea",
+      "name": "Regularizacion osea",
+      "name_en": "Regularizacion osea",
+      "price": "250.00",
+      "currency": "USD",
+      "status": "available",
+      "aliases": [
+        "regularizacion osea"
+      ],
+      "clinic_id": "demo_clinic_1"
+    },
+    {
       "id": "limpieza",
       "name": "Limpieza dental",
       "name_en": "Teeth cleaning",
@@ -8,7 +1868,15 @@
       "price": "25.00",
       "currency": "USD",
       "status": "available",
-      "aliases": ["limpieza", "limpieza de dientes", "profilaxis", "teeth cleaning", "dental cleaning", "limpieza dental"]
+      "aliases": [
+        "limpieza",
+        "limpieza de dientes",
+        "profilaxis",
+        "teeth cleaning",
+        "dental cleaning",
+        "limpieza dental"
+      ],
+      "clinic_id": "demo_clinic_2"
     },
     {
       "id": "revision",
@@ -18,7 +1886,15 @@
       "price": "15.00",
       "currency": "USD",
       "status": "available",
-      "aliases": ["revisión", "revision", "consulta", "check-up", "chequeo", "general check-up"]
+      "aliases": [
+        "revisión",
+        "revision",
+        "consulta",
+        "check-up",
+        "chequeo",
+        "general check-up"
+      ],
+      "clinic_id": "demo_clinic_2"
     },
     {
       "id": "extraccion",
@@ -28,7 +1904,14 @@
       "price": "45.00",
       "currency": "USD",
       "status": "available",
-      "aliases": ["extracción", "extraccion", "sacar muela", "tooth extraction", "pull tooth"]
+      "aliases": [
+        "extracción",
+        "extraccion",
+        "sacar muela",
+        "tooth extraction",
+        "pull tooth"
+      ],
+      "clinic_id": "demo_clinic_2"
     },
     {
       "id": "obturación",
@@ -38,7 +1921,15 @@
       "price": "35.00",
       "currency": "USD",
       "status": "available",
-      "aliases": ["obturación", "obturacion", "calza", "filling", "caries", "relleno"]
+      "aliases": [
+        "obturación",
+        "obturacion",
+        "calza",
+        "filling",
+        "caries",
+        "relleno"
+      ],
+      "clinic_id": "demo_clinic_2"
     },
     {
       "id": "blanqueamiento",
@@ -48,7 +1939,13 @@
       "price": "80.00",
       "currency": "USD",
       "status": "available",
-      "aliases": ["blanqueamiento", "blanquear", "whitening", "teeth whitening"]
+      "aliases": [
+        "blanqueamiento",
+        "blanquear",
+        "whitening",
+        "teeth whitening"
+      ],
+      "clinic_id": "demo_clinic_2"
     },
     {
       "id": "ortodoncia_consulta",
@@ -58,7 +1955,14 @@
       "price": "20.00",
       "currency": "USD",
       "status": "available",
-      "aliases": ["ortodoncia", "brackets", "frenos", "orthodontics", "consulta ortodoncia"]
+      "aliases": [
+        "ortodoncia",
+        "brackets",
+        "frenos",
+        "orthodontics",
+        "consulta ortodoncia"
+      ],
+      "clinic_id": "demo_clinic_2"
     },
     {
       "id": "emergencia",
@@ -68,7 +1972,14 @@
       "price": "40.00",
       "currency": "USD",
       "status": "available",
-      "aliases": ["emergencia", "dolor", "urgencia", "emergency", "pain"]
+      "aliases": [
+        "emergencia",
+        "dolor",
+        "urgencia",
+        "emergency",
+        "pain"
+      ],
+      "clinic_id": "demo_clinic_2"
     }
   ]
 }
