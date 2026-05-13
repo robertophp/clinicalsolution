@@ -81,6 +81,44 @@ async def send_text_message(
             resp.raise_for_status()
 
 
+def send_text_message_sync(
+    *,
+    graph_version: str,
+    phone_number_id: str,
+    to_wa_id: str,
+    body: str,
+    access_token: str,
+) -> None:
+    """
+    Igual que ``send_text_message`` pero bloqueante (httpx sync).
+
+    Usado cuando la respuesta al paciente debe enviarse solo después de notificar al especialista.
+    """
+    url = f"https://graph.facebook.com/{graph_version}/{phone_number_id}/messages"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    chunks = split_text_chunks(body)
+    if not chunks:
+        chunks = [" "]
+
+    with httpx.Client(timeout=60.0) as client:
+        for part in chunks:
+            payload: dict[str, Any] = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to_wa_id,
+                "type": "text",
+                "text": {"preview_url": False, "body": part},
+            }
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code >= 400:
+                logger.warning(
+                    "Graph API error sending WhatsApp message (sync): %s %s",
+                    resp.status_code,
+                    resp.text[:500],
+                )
+            resp.raise_for_status()
+
+
 @dataclass(frozen=True)
 class MetaWhatsappIncoming:
     """Un mensaje entrante del webhook Meta, normalizado."""

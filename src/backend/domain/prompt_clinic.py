@@ -1,0 +1,283 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+
+from ..schemas.clinic import ClinicConfig
+
+
+def _format_opening_hours_for_prompt(clinic: ClinicConfig, language: str) -> str:
+    """Formatea los horarios de atención de la clínica para el prompt (ES/EN)."""
+    opening_hours = getattr(clinic, "opening_hours", None) or {}
+    if not opening_hours:
+        return ""
+
+    def _last_booking_start_hhmm(from_h: str, to_h: str) -> str | None:
+        """Última hora de INICIO válida para una cita de 60 min que termine al cierre."""
+        try:
+            start_block = datetime.strptime((from_h or "").strip(), "%H:%M")
+            end_block = datetime.strptime((to_h or "").strip(), "%H:%M")
+        except ValueError:
+            return None
+        last_start = end_block - timedelta(hours=1)
+        if last_start < start_block:
+            return None
+        return last_start.strftime("%H:%M")
+
+    def _days_label(days: list[str]) -> str:
+        mapping_es = {
+            "mon": "lunes",
+            "tue": "martes",
+            "wed": "miércoles",
+            "thu": "jueves",
+            "fri": "viernes",
+            "sat": "sábado",
+            "sun": "domingo",
+        }
+        mapping_en = {
+            "mon": "Monday",
+            "tue": "Tuesday",
+            "wed": "Wednesday",
+            "thu": "Thursday",
+            "fri": "Friday",
+            "sat": "Saturday",
+            "sun": "Sunday",
+        }
+        mapping = mapping_en if language == "en" else mapping_es
+        return ", ".join(mapping.get(d, d) for d in days)
+
+    if language == "en":
+        lines: list[str] = ["\n\n[OPENING HOURS of the clinic (reception / when the clinic is open):]"]
+    else:
+        lines = ["\n\n[HORARIO DE ATENCIÓN de la clínica (recepción / cuando la clínica está abierta):]"]
+
+    for block in opening_hours.values():
+        days = block.get("days", [])
+        start = block.get("from")
+        end = block.get("to")
+        if not days or not start or not end:
+            continue
+        days_txt = _days_label(days)
+        if language == "en":
+            lines.append(f"- {days_txt}: from {start} to {end}")
+        else:
+            lines.append(f"- {days_txt}: de {start} a {end}")
+
+    if language == "en":
+        lines.append("\n[BOOKING START TIMES – each visit is 60 minutes:]")
+        lines.append(
+            "The closing time in each line (the 'to' time) is when the clinic stops for that block. "
+            "A 60-minute appointment must FINISH by that closing time, so the LAST valid appointment START "
+            "is exactly 1 hour BEFORE that closing time. "
+            "NEVER tell the patient that a start at the same clock time as closing (e.g. 17:00 when the block ends at 17:00) "
+            "is 'within hours' or bookable; it is NOT a valid start time."
+        )
+        lines.append("Last valid on-the-hour start for each block above:")
+    else:
+        lines.append("\n[HORARIOS PARA INICIAR UNA CITA – cada visita dura 60 minutos:]")
+        lines.append(
+            "La hora de cierre en cada línea (la hora 'a' / 'to') es cuando termina la atención en ese bloque. "
+            "Cada cita dura 60 minutos y debe terminar a más tardar a esa hora de cierre, "
+            "por lo que la ÚLTIMA hora de INICIO de cita permitida es exactamente 1 hora ANTES de ese cierre. "
+            "NUNCA digas al paciente que una cita puede INICIAR a la misma hora en que cierra el bloque "
+            "(ej. 17:00 si el bloque es hasta las 17:00): esa hora NO es un inicio válido de cita."
+        )
+        lines.append("Última hora de inicio en punto permitida por bloque (según el horario de arriba):")
+
+    for block in opening_hours.values():
+        days = block.get("days", [])
+        start = block.get("from")
+        end = block.get("to")
+        if not days or not start or not end:
+            continue
+        days_txt = _days_label(days)
+        last_start = _last_booking_start_hhmm(str(start), str(end))
+        if not last_start:
+            continue
+        if language == "en":
+            lines.append(f"- {days_txt}: last bookable start at {last_start} (do not offer {end} as a start time).")
+        else:
+            lines.append(
+                f"- {days_txt}: última cita que puedes ofrecer iniciando a las {last_start} "
+                f"(no ofrezcas inicio a las {end}; a esa hora ya cierra la clínica para ese bloque)."
+            )
+
+    return "\n".join(lines)
+
+
+def _format_clinic_location_for_prompt(clinic: ClinicConfig, language: str) -> str:
+    """
+    Enlace a Maps, parqueo y transporte: el modelo solo debe usar cada dato según la pregunta.
+    - Ubicación / dirección / dónde están: solo el enlace de Google Maps (nada más de este bloque).
+    - Parqueo: solo si el usuario pregunta explícitamente por parqueo/estacionamiento/aparcamiento.
+    - Transporte público: solo si pregunta por autobuses/rutas/transporte público/cómo llegar en bus.
+    """
+    maps = (getattr(clinic, "google_maps_link", None) or "").strip()
+    parking = (getattr(clinic, "indicaciones_parqueo", None) or "").strip()
+    transit = (getattr(clinic, "rutas_transporte_publico", None) or "").strip()
+    if not maps and not parking and not transit:
+        return ""
+
+    if language == "en":
+        lines: list[str] = ["\n\n[CLINIC LOCATION – follow these rules strictly:]"]
+        if maps:
+            lines.append(f"- Google Maps link (use ONLY for location/address/where the clinic is): {maps}")
+            lines.append(
+                "  If the patient asks where the clinic is, the address, location, or how to find you on the map, "
+                "reply with ONLY this link and a very short line (e.g. 'Here is the location:'). "
+                "Do NOT add parking or public transport details in that same reply unless they also asked for them."
+            )
+        if parking:
+            lines.append(f"- Parking (ONLY if they explicitly ask about parking): {parking}")
+        if transit:
+            lines.append(
+                f"- Public transport routes (ONLY if they explicitly ask about buses, routes, or public transport): {transit}"
+            )
+        lines.append(
+            "Never volunteer parking or public transport information in greetings or general replies. "
+            "Do not repeat the Maps link when answering only about parking or buses unless they also asked for the link."
+        )
+    else:
+        lines = ["\n\n[UBICACIÓN – sigue estas reglas al pie de la letra:]"]
+        if maps:
+            lines.append(f"- Enlace a Google Maps (solo para ubicación/dirección/dónde queda la clínica): {maps}")
+            lines.append(
+                "  Si el paciente pregunta dónde está la clínica, la dirección, ubicación o cómo encontrarlos en el mapa, "
+                "responde ÚNICAMENTE con este enlace y una frase muy breve (ej. 'Aquí está la ubicación:'). "
+                "No añadas en esa misma respuesta información de parqueo ni de transporte público, salvo que también lo pregunte."
+            )
+        if parking:
+            lines.append(f"- Parqueo (SOLO si pregunta explícitamente por parqueo, estacionamiento o aparcamiento): {parking}")
+        if transit:
+            lines.append(
+                f"- Transporte público (SOLO si pregunta explícitamente por autobuses, rutas o transporte público / cómo llegar en bus): {transit}"
+            )
+        lines.append(
+            "No ofrezcas por tu cuenta datos de parqueo ni de transporte en saludos o respuestas generales. "
+            "No repitas el enlace de Maps al responder solo sobre parqueo o buses, salvo que también pidan el enlace."
+        )
+    return "\n".join(lines)
+
+
+def _format_payment_methods_for_prompt(clinic: ClinicConfig, language: str) -> str:
+    """
+    Lista de métodos de pago por clínica. El modelo debe limitarse a estos textos
+    cuando pregunten por pagos, tarifas o comisiones.
+    """
+    raw = getattr(clinic, "payment_methods", None) or []
+    bullets: list[str] = []
+    for row in raw:
+        if language == "en":
+            line = (row.en or "").strip() or (row.es or "").strip()
+        else:
+            line = (row.es or "").strip() or (row.en or "").strip()
+        if line:
+            bullets.append(f"- {line}")
+    if not bullets:
+        return ""
+
+    if language == "en":
+        header = "\n\n[ACCEPTED PAYMENT METHODS – authoritative list for this clinic:]"
+        rules = (
+            "\nTone: WhatsApp-friendly and concise. "
+            "For a general question about how to pay (\"what payment methods do you accept?\"): "
+            "reply in one or two short sentences summarizing the types (e.g. cash, bank transfer, cards)—do NOT read out or paste every bullet. "
+            "If they specifically ask about 0 % fee, installments, \"meses sin intereses\", or paying in installments: "
+            "answer in plain language (yes/no per the list), then briefly explain only what the list allows "
+            "(e.g. 0 % installments only with the banks named in the list; not available with other banks if the list says so). "
+            "You may only mention options, banks, and rates that appear in the bullets; if unsure, say they can confirm at the clinic. "
+            "Do not dump the full bullet list unless they explicitly ask for every detail. "
+            "Do not volunteer this block in greetings; use it when payment comes up.]"
+        )
+    else:
+        header = "\n\n[MÉTODOS DE PAGO ACEPTADOS – lista oficial de esta clínica:]"
+        rules = (
+            "\nTono: WhatsApp, breve y cercano. "
+            "Si preguntan en general qué métodos de pago aceptan: responde en una o dos frases cortas resumiendo "
+            "(ej. efectivo, transferencia bancaria y tarjetas); NO enumeres ni copies todas las viñetas. "
+            "Si preguntan solo por tasa 0, meses sin intereses, cuotas o pagar a plazos: responde primero con un sí o no claro según la lista, "
+            "en lenguaje sencillo, y explica en una frase extra que la tasa 0 / plazos sin esa comisión solo aplica con los bancos que indica la lista "
+            "(Banco Agrícola y Banco Davivienda si así figura), y que con otros bancos esa opción no está disponible si la lista lo dice. "
+            "Solo puedes mencionar formas de pago, bancos y tasas que aparezcan en las viñetas; si no está, que confirmen en la clínica. "
+            "No pegues la lista completa salvo que pidan explícitamente todos los detalles. "
+            "No ofrezcas este bloque en saludos; úsalo cuando el tema sea el pago.]"
+        )
+    return header + "\n" + "\n".join(bullets) + rules
+
+
+def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language: str) -> str:
+    """
+    Contexto para el clasificador de derivación: qué puede resolver el bot antes de escalar a humano.
+    Evita derivar consultas informativas sobre pagos/precios que ya están en catálogo + métodos de pago.
+    """
+    use_en = (language or "").strip().lower().startswith("en")
+    chunks: list[str] = []
+    if clinic_cfg is not None:
+        raw_pm = getattr(clinic_cfg, "payment_methods", None) or []
+        lines: list[str] = []
+        for row in raw_pm:
+            if use_en:
+                line = (row.en or "").strip() or (row.es or "").strip()
+            else:
+                line = (row.es or "").strip() or (row.en or "").strip()
+            if line:
+                lines.append(line)
+        if lines:
+            listed = "\n".join(f"- {t}" for t in lines[:24])
+            if use_en:
+                chunks.append(
+                    "Official payment options the assistant may use (do NOT require human transfer if the patient "
+                    "only asks about cards, installments, 0% fee, which banks, or says it feels expensive but is "
+                    "clearly asking what payment options exist):\n"
+                    f"{listed}"
+                )
+            else:
+                chunks.append(
+                    "Opciones de pago oficiales que el asistente puede usar (NO requieras derivación si solo preguntan "
+                    "por tarjeta, cuotas, tasa 0, qué bancos, o dicen que les parece caro pero en realidad buscan "
+                    "alternativas de pago según esta lista):\n"
+                    f"{listed}"
+                )
+    if use_en:
+        chunks.append(
+            "Service prices are in the SERVICES CATALOG embedded in the assistant instructions; "
+            "routine price questions are not escalation unless there is a billing dispute or harsh complaint."
+        )
+    else:
+        chunks.append(
+            "Los precios de servicios están en el CATÁLOGO del prompt del asistente; "
+            "preguntas rutinarias de precio no son derivación salvo conflicto de cobro o reclamo fuerte."
+        )
+    return "\n\n".join(chunks) if chunks else ""
+
+
+def _format_urgency_dolor_prompt_block(language: str) -> str:
+    """Instrucciones para dolor/ inflamación / dolor posprocedimiento y uso de herramientas de urgencia."""
+    if language == "en":
+        return (
+            "\n\n[PAIN / URGENCY – when the patient mentions strong dental pain, swelling, "
+            "or severe pain after a recent treatment at the clinic:]\n"
+            "- Respond with brief empathy (they are being heard) and reassurance that the clinic team will take care of them.\n"
+            "- Prefer offering an evaluation appointment: use catalog service id `evaluacion` unless they clearly want a different service; "
+            "then follow the normal booking flow.\n"
+            "- Call `consultar_primer_dia_disponible` (optional max_dias 1–30, default 14) to find the **first calendar day from tomorrow** "
+            "with at least one free slot (skips closed days and fully booked days).\n"
+            "- Offer only the times in `primeras_tres_horas` first (up to three HH:00 starts), unless they ask for more options.\n"
+            "- Classification for `suffix_urgencia` when booking with `evaluacion`: "
+            "`dolor_post_cita` if pain seems linked to a procedure or visit they had at the clinic; "
+            "`dolor_intenso` if they report severe pain but do not tie it to a recent procedure.\n"
+            "- When calling `agendar_cita` for this flow, pass `servicio`=`evaluacion` and `suffix_urgencia` as above so the calendar title stays accurate; "
+            "omit `suffix_urgencia` for ordinary bookings.\n"
+        )
+    return (
+        "\n\n[DOLOR / URGENCIA – si el paciente menciona dolor dental fuerte, inflamación, "
+        "o mucho dolor después de un tratamiento o visita reciente en la clínica:]\n"
+        "- Responde con empatía breve y tranquilidad: el equipo de la clínica está capacitado para ayudarle.\n"
+        "- Prioriza ofrecer una **evaluación**: usa el id de catálogo `evaluacion` salvo que deje claro que quiere otro servicio; entonces sigue el flujo normal.\n"
+        "- Llama `consultar_primer_dia_disponible` (max_dias opcional 1–30, por defecto 14) para obtener el **primer día con huecos** desde mañana "
+        "(salta días cerrados o sin horas libres).\n"
+        "- Ofrece primero solo las horas de `primeras_tres_horas` (máximo tres inicios HH:00), salvo que pida más opciones.\n"
+        "- Clasificación para `suffix_urgencia` al agendar con `evaluacion`: "
+        "`dolor_post_cita` si el dolor parece ligado a un procedimiento o cita reciente en clínica; "
+        "`dolor_intenso` si describe dolor fuerte sin atarlo a un procedimiento reciente.\n"
+        "- En `agendar_cita` incluye `servicio`=`evaluacion` y `suffix_urgencia` según el caso para el título en agenda; en citas normales no envíes `suffix_urgencia`.\n"
+    )

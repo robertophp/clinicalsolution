@@ -112,6 +112,12 @@ class ConversationMemoryService:
             metadata["patient_first_name"] = data.get("patient_first_name")
         if "updated_at" in data:
             metadata["updated_at"] = _parse_timestamp(data.get("updated_at"))
+        if "human_transfer_phase" in data:
+            metadata["human_transfer_phase"] = data.get("human_transfer_phase")
+        if "human_transfer_summary" in data:
+            metadata["human_transfer_summary"] = data.get("human_transfer_summary")
+        if "human_transfer_categories" in data:
+            metadata["human_transfer_categories"] = data.get("human_transfer_categories")
         return metadata
 
     def add_message(
@@ -202,6 +208,67 @@ class ConversationMemoryService:
             {
                 "patient_name": name,
                 "patient_first_name": first_name_norm,
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_human_transfer_awaiting_summary(
+        self,
+        clinic_id: str,
+        from_number: str,
+        *,
+        summary: str,
+        categories: list[str],
+    ) -> None:
+        """Marca la conversación en espera de confirmación del resumen antes de notificar al especialista."""
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        cats = [str(c).strip() for c in categories if str(c).strip()]
+        doc_ref.set(
+            {
+                "human_transfer_phase": "awaiting_summary",
+                "human_transfer_summary": (summary or "").strip(),
+                "human_transfer_categories": cats,
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def update_human_transfer_summary(
+        self,
+        clinic_id: str,
+        from_number: str,
+        *,
+        summary: str,
+    ) -> None:
+        """Actualiza el borrador del resumen tras feedback del paciente."""
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "human_transfer_phase": "awaiting_summary",
+                "human_transfer_summary": (summary or "").strip(),
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def clear_human_transfer(self, clinic_id: str, from_number: str) -> None:
+        """Finaliza el flujo de derivación (campos explícitos para evitar campos huérfanos)."""
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "human_transfer_phase": "none",
+                "human_transfer_summary": "",
+                "human_transfer_categories": [],
                 "updated_at": now,
                 "clinic_id": clinic_id,
                 "from_number": from_number,

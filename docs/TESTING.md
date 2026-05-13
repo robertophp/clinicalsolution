@@ -5,7 +5,7 @@
 **Clinica Assistant Agent** is a backend for a **WhatsApp dental clinic assistant**:
 
 - **Twilio** receives WhatsApp messages and forwards them to your server.
-- Your server identifies the **clinic** via `?clinic_id=xxx`, loads that clinic’s **system prompt** from `backend/data/clinics_mock.json`.
+- Your server identifies the **clinic** via `?clinic_id=xxx`, loads that clinic’s **system prompt** from `src/backend/data/clinics_mock.json`.
 - **Vertex AI Gemini 1.5 Flash** generates a reply using that prompt and the user message.
 - The reply is sent back as **TwiML** so Twilio can deliver it on WhatsApp.
 
@@ -20,8 +20,11 @@ You also have **BigQuery + SQLAlchemy** and a **Cita** (appointment) model set u
 ```powershell
 cd "c:\Users\rober\OneDrive\Desktop\AI projects\Clinica Assistant Agent\clinicalsolution"
 .venv\Scripts\activate
+pip install -r requirements.txt
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+`pip install -r requirements.txt` registra el paquete `backend` desde `src/backend/` en modo editable (ver `pyproject.toml`).
 
 In another terminal:
 

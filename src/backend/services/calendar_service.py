@@ -12,6 +12,8 @@ from ..database import Cita
 
 
 CALENDAR_TIMEZONE = "America/El_Salvador"
+# Google Calendar permite títulos largos; acortamos para legibilidad en móvil.
+CALENDAR_SUMMARY_MAX_LEN = 200
 
 
 class CalendarServiceError(Exception):
@@ -41,17 +43,30 @@ class CalendarService:
         return self._service
 
     @staticmethod
+    def _truncate_calendar_summary(text: str, max_len: int = CALENDAR_SUMMARY_MAX_LEN) -> str:
+        t = (text or "").strip()
+        if len(t) <= max_len:
+            return t
+        if max_len <= 1:
+            return "…"
+        return t[: max_len - 1] + "…"
+
+    @staticmethod
     def _build_event_payload(
         *,
         cita: Cita,
         clinic_name: str,
         assistant_name: str,
+        servicio_display: str | None = None,
+        calendar_suffix: str | None = None,
     ) -> dict:
         """
         Construye el dict de evento de Calendar a partir de una cita.
 
         - Usa hora local de El Salvador.
         - Duración fija de 60 minutos (puedes ajustar si lo necesitas).
+        - servicio_display: etiqueta legible del servicio (si no, se usa razon_cita).
+        - calendar_suffix: texto corto para urgencias (ej. dolor post cita).
         """
         if not cita.fecha_cita or not cita.hora_cita:
             raise CalendarServiceError("La cita no tiene fecha u hora para Calendar.")
@@ -60,17 +75,24 @@ class CalendarService:
         end_dt = start_dt + timedelta(minutes=60)
 
         paciente = (cita.paciente_nombre or "Paciente sin nombre").strip()
-        servicio = (cita.razon_cita or "Servicio sin especificar").strip()
+        razon = (cita.razon_cita or "Servicio sin especificar").strip()
+        servicio_label = (servicio_display or "").strip() or razon
         telefono = (cita.telefono or "Sin teléfono").strip()
         clinic_id = (cita.clinic_id or "sin_clinica").strip()
 
-        summary = f"Cita: {paciente} – {servicio}"
+        suf = (calendar_suffix or "").strip()
+        if suf:
+            summary_raw = f"Cita: {paciente} – {servicio_label} – {suf}"
+        else:
+            summary_raw = f"Cita: {paciente} – {servicio_label}"
+        summary = CalendarService._truncate_calendar_summary(summary_raw)
 
         description_lines = [
             f"Clínica: {clinic_name} (ID: {clinic_id})",
             f"Paciente: {paciente}",
             f"Teléfono: {telefono}",
-            f"Servicio: {servicio}",
+            f"Servicio (catálogo): {razon}",
+            f"Etiqueta en agenda: {servicio_label}",
             "",
             f"Agendado por: Asistente WhatsApp {assistant_name}",
             "Doctor asignado: (pendiente)",
@@ -101,6 +123,8 @@ class CalendarService:
         cita: Cita,
         clinic_name: str,
         assistant_name: str,
+        servicio_display: str | None = None,
+        calendar_suffix: str | None = None,
     ) -> str:
         """
         Crea un evento en Google Calendar para la cita y devuelve el event_id.
@@ -111,6 +135,8 @@ class CalendarService:
                 cita=cita,
                 clinic_name=clinic_name,
                 assistant_name=assistant_name,
+                servicio_display=servicio_display,
+                calendar_suffix=calendar_suffix,
             )
             created = (
                 client.events()
@@ -168,6 +194,119 @@ class CalendarService:
             raise CalendarServiceError(f"Error de Google Calendar al leer evento: {exc}") from exc
         except Exception as exc:  # noqa: BLE001
             raise CalendarServiceError(f"Error inesperado al leer evento en Calendar: {exc}") from exc
+
+    @staticmethod
+    def _parse_event_datetime(value: str) -> datetime | None:
+        s = (value or "").strip().replace("Z", "+00:00")
+        if not s:
+            return None
+        try:
+            dt = datetime.fromisoformat(s)
+        except ValueError:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    def list_busy_intervals(
+        self,
+        *,
+        calendar_id: str,
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> list[tuple[datetime, datetime]]:
+        """
+        Lista intervalos ocupados de eventos en [start_dt, end_dt).
+        """
+        if not calendar_id:
+            return []
+        try:
+            client = self._get_client()
+            resp = (
+                client.events()
+                .list(
+                    calendarId=calendar_id,
+                    timeMin=start_dt.astimezone(timezone.utc).isoformat(),
+                    timeMax=end_dt.astimezone(timezone.utc).isoformat(),
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
+            )
+        except HttpError as exc:  # type: ignore[import-untyped]
+            raise CalendarServiceError(f"Error de Google Calendar al listar eventos: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            raise CalendarServiceError(f"Error inesperado al listar eventos de Calendar: {exc}") from exc
+
+        out: list[tuple[datetime, datetime]] = []
+        for item in (resp.get("items") or []):
+            if (item.get("status") or "").lower() == "cancelled":
+                continue
+            start_raw = (item.get("start") or {}).get("dateTime")
+            end_raw = (item.get("end") or {}).get("dateTime")
+            if not start_raw or not end_raw:
+                continue
+            ev_start = self._parse_event_datetime(start_raw)
+            ev_end = self._parse_event_datetime(end_raw)
+            if not ev_start or not ev_end or ev_end <= ev_start:
+                continue
+            out.append((ev_start, ev_end))
+        return out
+
+    @staticmethod
+    def _ceil_to_next_hour(dt: datetime) -> datetime:
+        if dt.minute == 0 and dt.second == 0 and dt.microsecond == 0:
+            return dt
+        return (dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1))
+
+    def get_available_hourly_slots(
+        self,
+        *,
+        calendar_id: str,
+        day: date_type,
+        opening_ranges: list[tuple[time_type, time_type]],
+        slot_minutes: int = 60,
+        use_calendar_busy: bool = True,
+    ) -> list[time_type]:
+        """
+        Devuelve horas de inicio disponibles en punto para slots de 60 minutos.
+        Regla: el slot debe caber completo dentro del bloque (start+slot <= cierre).
+
+        Si ``use_calendar_busy`` es True y hay ``calendar_id``, descarta traslapes con
+        eventos reales de Google Calendar. Si es False, solo aplica el horario de la
+        clínica (útil cuando aún no hay integración con Calendar).
+        """
+        if not opening_ranges:
+            return []
+        tz_sv = timezone(timedelta(hours=-6))
+        day_windows: list[tuple[datetime, datetime]] = []
+        for start_t, end_t in opening_ranges:
+            win_start = datetime.combine(day, start_t, tzinfo=tz_sv)
+            win_end = datetime.combine(day, end_t, tzinfo=tz_sv)
+            if win_end <= win_start:
+                continue
+            day_windows.append((win_start, win_end))
+        if not day_windows:
+            return []
+
+        query_start = min(w[0] for w in day_windows)
+        query_end = max(w[1] for w in day_windows)
+        if use_calendar_busy and calendar_id:
+            busy = self.list_busy_intervals(calendar_id=calendar_id, start_dt=query_start, end_dt=query_end)
+        else:
+            busy = []
+
+        available: list[time_type] = []
+        slot_delta = timedelta(minutes=slot_minutes)
+        for win_start, win_end in day_windows:
+            cursor = self._ceil_to_next_hour(win_start)
+            while cursor + slot_delta <= win_end:
+                slot_end = cursor + slot_delta
+                overlaps = any((cursor < b_end and slot_end > b_start) for b_start, b_end in busy)
+                if not overlaps:
+                    available.append(cursor.timetz().replace(tzinfo=None))
+                cursor += timedelta(hours=1)
+        return available
 
     @staticmethod
     def event_start_to_sv_date_time(event: dict[str, Any]) -> tuple[date_type, time_type] | None:

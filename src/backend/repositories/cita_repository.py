@@ -15,6 +15,10 @@ CITA_STATUS_ACTIVA = "activa"       # cita en pie (default para citas nuevas)
 CITA_STATUS_CANCELADA = "cancelada"  # el cliente la canceló
 CITA_STATUS_REAGENDADA = "reagendada"  # se reagendó; la nueva cita queda activa
 
+# Estado de derivación a especialista (columna transferencia_estado en citas)
+TRANSFERENCIA_ESTADO_PENDIENTE_RESUMEN = "pendiente_resumen"
+TRANSFERENCIA_ESTADO_TRANSFERIDO = "transferido"
+
 
 def _parse_fecha_hora(fecha: str, hora: str) -> datetime:
     """Combina fecha (YYYY-MM-DD) y hora (HH:MM o HH:MM:SS) en un datetime."""
@@ -156,6 +160,28 @@ def update_cita_fecha_hora_from_calendar(
     cita.hora_cita = hora_cita.replace(microsecond=0)
     cita.sync_status = "ok"
     cita.sync_error_message = None
+    db.add(cita)
+    db.commit()
+    db.refresh(cita)
+    return cita
+
+
+def update_latest_cita_transferencia_estado(
+    db: Session,
+    *,
+    clinic_id: str,
+    telefono: str,
+    estado: str | None,
+) -> Cita | None:
+    """
+    Actualiza ``transferencia_estado`` en la fila más reciente de citas para ese teléfono y clínica.
+
+    Si no hay citas previas, no hace nada (el flujo de derivación sigue en Firestore).
+    """
+    cita = get_latest_cita_for_phone(db, clinic_id=clinic_id, telefono=telefono)
+    if not cita:
+        return None
+    cita.transferencia_estado = (estado or "").strip() or None
     db.add(cita)
     db.commit()
     db.refresh(cita)

@@ -11,21 +11,30 @@ Backend mínimo para un asistente de IA para clínicas dentales sobre WhatsApp u
 
 ### Estructura principal
 
-- `backend/config.py`: carga configuración con `pydantic-settings` (PROJECT_ID, LOCATION, TWILIO_AUTH).
-- `backend/database.py`: configuración de SQLAlchemy con dialecto BigQuery y modelo `Cita`.
-- `backend/services/gemini_service.py`: clase `GeminiService` que envuelve Gemini 1.5 Flash.
-- `backend/data/clinics_mock.json`: configuración mock de clínicas y sus `system_prompt`.
-- `backend/data/services_catalog.json`: catálogo de servicios (id, nombre, precio, disponibilidad) para que el asistente informe precios y guarde el tipo de cita en BigQuery.
-- `backend/main.py`: webhooks `/whatsapp` (Twilio) y `/webhooks/whatsapp` (Meta), `/chat` (JSON) y `/health`.
-- `backend/services/conversation_memory.py`: memoria de conversación en Firestore (historial por usuario/clínica, TTL e inactividad).
+El código del paquete Python vive bajo **`src/backend/`** (layout *src*). El módulo importable sigue siendo `backend` (por ejemplo `uvicorn backend.main:app`).
+
+- `src/backend/config.py`: carga configuración con `pydantic-settings` (PROJECT_ID, LOCATION, TWILIO_AUTH).
+- `src/backend/database.py`: configuración de SQLAlchemy con dialecto BigQuery y modelo `Cita`.
+- `src/backend/services/gemini_service.py`: clase `GeminiService` que envuelve Gemini 1.5 Flash.
+- `src/backend/data/clinics_mock.json`: configuración mock de clínicas y sus `system_prompt`.
+- `src/backend/data/services_catalog.json`: catálogo de servicios (id, nombre, precio, disponibilidad) para que el asistente informe precios y guarde el tipo de cita en BigQuery.
+- `src/backend/main.py`: entry ASGI (`app = create_app()`).
+- `src/backend/api/app_factory.py` y `src/backend/api/routers/`: rutas HTTP agrupadas (health, chat, WhatsApp Twilio/Meta, jobs).
+- `src/backend/bootstrap.py`: arranque (clínicas, Gemini, memoria, `_generate_and_persist_reply` y lógica de conversación).
+- `src/backend/services/conversation_memory.py`: memoria de conversación en Firestore (historial por usuario/clínica, TTL e inactividad).
+- `src/backend/services/human_transfer_topics.py` y `src/backend/services/human_transfer_service.py`: derivación a especialista humano por WhatsApp (detección con Gemini, resumen y envío vía Graph API).
 
 ### Instalación
+
+Desde la raíz del repositorio (donde están `pyproject.toml` y `requirements.txt`):
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # En Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+Eso instala el proyecto en modo **editable** (`src/backend` como paquete `backend`) y las dependencias declaradas en `pyproject.toml`, incluyendo extras de desarrollo (pytest). En producción puedes usar `pip install -e .` sin `[dev]` si no necesitas ejecutar tests en ese entorno.
 
 ### Variables de entorno (.env)
 
@@ -65,6 +74,24 @@ La tabla `clinica_datos.citas` debe tener (además de las columnas que ya uses) 
 - **cancelada**: el cliente canceló la cita.
 - **reagendada**: la cita se movió a otro horario; la cita nueva queda como activa.
 
+#### Columna `transferencia_estado` (derivación a especialista)
+
+El asistente puede marcar conversaciones derivadas a un humano. Los valores usados por el backend son:
+
+- **`pendiente_resumen`**: el paciente tiene un resumen pendiente de confirmación antes de notificar al especialista (se escribe en la **última** fila de `citas` de ese teléfono y `clinica_id`, si existe).
+- **`transferido`**: el paciente confirmó el resumen y el mensaje se envió por WhatsApp Cloud API al número configurado en la clínica.
+
+Si el paciente nunca tuvo una fila en `citas`, el flujo de derivación sigue funcionando (Firestore guarda el estado), pero **no** se actualizará BigQuery hasta que exista al menos una cita para ese número.
+
+DDL sugerido:
+
+```sql
+ALTER TABLE `clinicalassistant-489223.clinica_datos.citas`
+ADD COLUMN IF NOT EXISTS transferencia_estado STRING;
+```
+
+(Ajusta el proyecto si usas otro ID de GCP.)
+
 Si la columna `status` no existe en BigQuery:
 
 ```sql
@@ -74,9 +101,20 @@ ALTER TABLE `tu_proyecto.clinica_datos.citas`
 ADD COLUMN IF NOT EXISTS razon_cita STRING;
 ```
 
+### Derivación a especialista humano (WhatsApp Cloud)
+
+En `src/backend/data/clinics_mock.json`, por clínica:
+
+- **`specialist_whatsapp`**: número del especialista en formato E.164 (ej. `+50371234567`) o solo dígitos; debe ser distinto del número del bot.
+- **`human_transfer_topic_keys`** (opcional): lista de claves para limitar qué temas activan la derivación; si se omite, se usan todos los definidos en `human_transfer_topics.py`.
+
+El envío al especialista usa el mismo **`META_WHATSAPP_ACCESS_TOKEN`** y el **`whatsapp_phone_number_id`** de esa clínica (el número de negocio que ya envía al paciente).
+
+Si la columna `transferencia_estado` no existe en BigQuery, las actualizaciones fallarán en log pero el flujo de chat seguirá.
+
 ### Catálogo de servicios
 
-En `backend/data/services_catalog.json` se define la lista de servicios con `id`, `name`, `name_en`, `price`, `currency`, `status` y `aliases`. El modelo usa este catálogo para: entender qué servicio quiere el usuario (o preguntarle si no está claro), responder preguntas de precios y guardar el `id` del servicio en `razon_cita` al agendar.
+En `src/backend/data/services_catalog.json` se define la lista de servicios con `id`, `name`, `name_en`, `price`, `currency`, `status` y `aliases`. El modelo usa este catálogo para: entender qué servicio quiere el usuario (o preguntarle si no está claro), responder preguntas de precios y guardar el `id` del servicio en `razon_cita` al agendar.
 
 # clinicalsolution
 Dental Solution using GCP enviorment

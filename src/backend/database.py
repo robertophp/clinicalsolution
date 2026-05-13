@@ -56,6 +56,8 @@ class Cita(Base):
     calendar_id: str = Column("calendar_id", String(255), nullable=True)
     sync_status: str = Column("sync_status", String(32), nullable=True)
     sync_error_message: str = Column("sync_error_message", String(1024), nullable=True)
+    # Derivación a especialista humano (ver README / DDL en BigQuery).
+    transferencia_estado: str = Column("transferencia_estado", String(64), nullable=True)
     timestamp: datetime = Column(
         "creado_en",
         TIMESTAMP(timezone=True),
