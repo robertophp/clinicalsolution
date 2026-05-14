@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 import re
-import time
 from typing import Callable, Iterable, Mapping, Sequence
 
 import vertexai
@@ -313,13 +311,6 @@ class GeminiService:
             raise GeminiServiceError("Modelo Gemini no inicializado.")
 
         history_text = self._format_history(chat_history or [])
-        # #region agent log
-        try:
-            with open("debug-84132f.log", "a", encoding="utf-8") as _f:
-                _f.write(json.dumps({"sessionId":"84132f","runId":"post-fix","hypothesisId":"A","location":"gemini_service.py:after_format_history","message":"_format_history ok","data":{"history_len":len(chat_history or [])},"timestamp":round(time.time()*1000)}) + "\n")
-        except Exception:
-            pass
-        # #endregion
         prompt = self._build_prompt(system_prompt=system_prompt, history_text=history_text)
         config = GenerationConfig(
             temperature=temperature,
@@ -396,7 +387,7 @@ class GeminiService:
             contents.append(Content(role="user", parts=response_parts))
 
         raise GeminiServiceError("Se excedió el número máximo de rondas de herramientas.")
-    # #region agent log
+
     @staticmethod
     def _format_history(chat_history: Iterable[Mapping[str, str]]) -> str:
         """Convierte el historial de chat en texto plano estructurado."""

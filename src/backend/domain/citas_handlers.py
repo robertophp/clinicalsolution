@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 import logging
-import time
 from typing import TYPE_CHECKING
 
 from ..database import SessionLocal
@@ -200,26 +198,6 @@ def _handle_agendar_cita(
                 cita.sync_error_message = str(exc)
                 db.add(cita)
                 db.commit()
-        # #region agent log
-        try:
-            with open("debug-84132f.log", "a", encoding="utf-8") as _f:
-                _f.write(
-                    json.dumps(
-                        {
-                            "sessionId": "84132f",
-                            "runId": "post-fix",
-                            "hypothesisId": "B",
-                            "location": "domain/citas_handlers.py:_handle_agendar_cita",
-                            "message": "create_cita ok",
-                            "data": {"fecha": fecha, "hora": hora},
-                            "timestamp": round(time.time() * 1000),
-                        }
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion
         servicio_label = _service_display_label(clinic_id, servicio, language)
         if language == "en":
             mensaje = f"Done! I've scheduled your appointment for {fecha} at {hora} (service: {servicio_label})."
@@ -227,24 +205,6 @@ def _handle_agendar_cita(
             mensaje = f"¡Listo! He agendado tu cita para el {fecha} a las {hora} (servicio: {servicio_label})."
         return {"mensaje": mensaje}
     except Exception as e:
-        try:
-            with open("debug-84132f.log", "a", encoding="utf-8") as _f:
-                _f.write(
-                    json.dumps(
-                        {
-                            "sessionId": "84132f",
-                            "runId": "post-fix",
-                            "hypothesisId": "B",
-                            "location": "domain/citas_handlers.py:_handle_agendar_cita",
-                            "message": "create_cita error",
-                            "data": {"error": str(e)},
-                            "timestamp": round(time.time() * 1000),
-                        }
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
         logging.warning("Error agendando cita: %s", e)
         if language == "en":
             msg = "I couldn't schedule the appointment. Please try again or contact the clinic."

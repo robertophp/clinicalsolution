@@ -1,13 +1,15 @@
 ## Clinica Assistant Agent (Backend)
 
-Backend mínimo para un asistente de IA para clínicas dentales sobre WhatsApp usando:
+Backend para un asistente de IA para clínicas dentales sobre WhatsApp usando:
 
 - **FastAPI** como framework web.
 - **Twilio** (opcional) para el webhook `POST /whatsapp` y respuesta en formato TwiML.
 - **WhatsApp Cloud API (Meta)** para `GET`/`POST /webhooks/whatsapp` (respuesta vía Graph API); guía en [`docs/WHATSAPP_META.md`](docs/WHATSAPP_META.md).
-- **Vertex AI Gemini 1.5 Flash** como motor de IA.
+- **Vertex AI Gemini** como motor de IA.
 - **SQLAlchemy + BigQuery** como base de datos.
-- **pydantic-settings** para configuración via variables de entorno / `.env`.
+- **pydantic-settings** para configuración vía variables de entorno / `.env`.
+
+Documentación adicional: [**Arquitectura**](docs/ARCHITECTURE.md) · [**Contribuir**](docs/CONTRIBUTING.md)
 
 ### Estructura principal
 
@@ -20,7 +22,8 @@ El código del paquete Python vive bajo **`src/backend/`** (layout *src*). El m�
 - `src/backend/data/services_catalog.json`: catálogo de servicios (id, nombre, precio, disponibilidad) para que el asistente informe precios y guarde el tipo de cita en BigQuery.
 - `src/backend/main.py`: entry ASGI (`app = create_app()`).
 - `src/backend/api/app_factory.py` y `src/backend/api/routers/`: rutas HTTP agrupadas (health, chat, WhatsApp Twilio/Meta, jobs).
-- `src/backend/bootstrap.py`: arranque (clínicas, Gemini, memoria, `_generate_and_persist_reply` y lógica de conversación).
+- `src/backend/bootstrap.py`: orquestación (clínicas, Gemini, memoria, `_generate_and_persist_reply` y lógica de conversación).
+- `src/backend/domain/conversation_prompt.py`: armado del system prompt efectivo (referencia de fechas, horarios, catálogo, instrucciones de herramientas de citas).
 - `src/backend/services/conversation_memory.py`: memoria de conversación en Firestore (historial por usuario/clínica, TTL e inactividad).
 - `src/backend/services/human_transfer_topics.py` y `src/backend/services/human_transfer_service.py`: derivación a especialista humano por WhatsApp (detección con Gemini, resumen y envío vía Graph API).
 
@@ -36,9 +39,19 @@ pip install -r requirements.txt
 
 Eso instala el proyecto en modo **editable** (`src/backend` como paquete `backend`) y las dependencias declaradas en `pyproject.toml`, incluyendo extras de desarrollo (pytest). En producción puedes usar `pip install -e .` sin `[dev]` si no necesitas ejecutar tests en ese entorno.
 
-### Variables de entorno (.env)
+### Archivo `.env` (no está en el repositorio)
 
-Crear un archivo `.env` en la raíz del proyecto con al menos:
+Las variables sensibles y de entorno **no** se versionan. Para desarrollo o despliegue:
+
+1. **Solicita el archivo `.env`** al responsable del proyecto (o al equipo interno) con los valores correctos para tu entorno.
+2. Coloca ese archivo en la **raíz** del repositorio (junto a `pyproject.toml`).
+3. No lo subas a git: ya está listado en `.gitignore`.
+
+No mantenemos `.env.example` en el repo para evitar confusiones con valores ficticios; las variables que suele necesitar el backend se documentan aquí abajo como referencia (los valores reales van solo en el `.env` que te compartan).
+
+### Variables de entorno (referencia)
+
+Tu archivo `.env` en la raíz debe incluir al menos (nombres ilustrativos; el equipo te entrega los valores reales):
 
 ```bash
 PROJECT_ID=tu-proyecto-gcp
@@ -50,6 +63,18 @@ TWILIO_AUTH=token_o_secret_de_twilio_opcional
 # CONVERSATION_MAX_HISTORY=5
 # CONVERSATION_MAX_STORED=20
 ```
+
+### Secretos y credenciales
+
+- No commitees `key.json`, `.env` ni tokens de Meta/Twilio.
+- Si alguna vez se subió un JSON de credenciales a git, **rótalo** en la consola de Google Cloud y genera credenciales nuevas.
+
+### Checklist: agregar una nueva clínica
+
+1. Añade un objeto en `src/backend/data/clinics_mock.json` con `id`, `name`, `system_prompt` / `system_prompt_en`, `assistant_name`, `opening_hours`, `whatsapp_phone_number_id` (Meta), `calendar_id` / `calendar_sync_enabled`, `specialist_whatsapp` si aplica, `payment_methods`, etc.
+2. Añade o filtra entradas en `src/backend/data/services_catalog.json` (`clinic_id` de la clínica o `"*"` para compartidos).
+3. Verifica el mapeo de `whatsapp_phone_number_id` → clínica (`domain/clinics_config.py`).
+4. Prueba un mensaje de WhatsApp (o `/chat`) contra esa `clinic_id`.
 
 ### Ejecutar el servidor
 
@@ -115,6 +140,3 @@ Si la columna `transferencia_estado` no existe en BigQuery, las actualizaciones 
 ### Catálogo de servicios
 
 En `src/backend/data/services_catalog.json` se define la lista de servicios con `id`, `name`, `name_en`, `price`, `currency`, `status` y `aliases`. El modelo usa este catálogo para: entender qué servicio quiere el usuario (o preguntarle si no está claro), responder preguntas de precios y guardar el `id` del servicio en `razon_cita` al agendar.
-
-# clinicalsolution
-Dental Solution using GCP enviorment
