@@ -12,6 +12,7 @@ from ..repositories import (
     create_cita,
     get_latest_activa_cita_for_phone,
     get_latest_cita_for_phone,
+    list_upcoming_activa_citas_for_phone,
     update_cita_status,
 )
 from ..services.calendar_service import calendar_service, CalendarServiceError
@@ -459,5 +460,56 @@ def _handle_reagendar_cita(from_number: str, clinic_id: str, language: str, assi
         else:
             msg = "No pude reagendar la cita. Por favor intenta de nuevo o contacta a la clínica."
         return {"error": str(e), "mensaje": msg}
+    finally:
+        db.close()
+
+
+def _handle_listar_mis_citas_proximas(from_number: str, clinic_id: str, language: str) -> dict:
+    """
+    Lista citas activas del paciente (teléfono + clínica) desde ahora en hora de El Salvador.
+    Sin 'mensaje': el modelo enumera al paciente usando el arreglo citas y la nota.
+    """
+    db = SessionLocal()
+    try:
+        citas = list_upcoming_activa_citas_for_phone(db, clinic_id=clinic_id, telefono=from_number)
+        items: list[dict] = []
+        for c in citas:
+            fe = c.fecha_cita.isoformat() if c.fecha_cita else ""
+            hora_t = c.hora_cita
+            hora_s = hora_t.strftime("%H:%M") if hora_t else ""
+            sid = (c.razon_cita or "").strip()
+            label = _service_display_label(clinic_id, sid, language) if sid else ""
+            if not label:
+                label = sid or ("Not specified" if language == "en" else "Sin especificar")
+            items.append(
+                {
+                    "fecha": fe,
+                    "hora": hora_s,
+                    "servicio_id": sid or None,
+                    "servicio": label,
+                }
+            )
+        if language == "en":
+            nota = (
+                "Active upcoming appointments for this patient's WhatsApp number in this clinic, "
+                "from the current moment in El Salvador (UTC-6). Each entry has fecha (YYYY-MM-DD), hora (HH:MM), "
+                "and servicio (human-readable). List them clearly for the patient. If citas is empty, say they have "
+                "no upcoming active appointments on file."
+            )
+        else:
+            nota = (
+                "Citas **activas** registradas para el teléfono de esta conversación en esta clínica, "
+                "desde el momento actual en hora de El Salvador (UTC-6). Cada elemento trae fecha (AAAA-MM-DD), "
+                "hora (HH:MM) y servicio (nombre legible). Enuméralas al paciente con fecha, hora y tipo de servicio. "
+                "Si citas está vacío, indica que no tiene citas próximas registradas en el sistema."
+            )
+        return {"ok": True, "citas": items, "nota": nota}
+    except Exception as e:
+        logging.warning("Error listando citas próximas: %s", e)
+        if language == "en":
+            nota = "Could not load appointments from the system."
+        else:
+            nota = "No se pudieron consultar las citas en el sistema."
+        return {"ok": False, "error": str(e), "citas": [], "nota": nota}
     finally:
         db.close()

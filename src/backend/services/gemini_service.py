@@ -21,6 +21,7 @@ from ..config import settings
 _TOOL_CODE_LEAK_RE = re.compile(
     r"print\s*\(|default_api\b|\.agendar_cita\s*\(|agendar_cita\s*\(|"
     r"consultar_disponibilidad\s*\(|consultar_primer_dia_disponible\s*\(|"
+    r"listar_mis_citas_proximas\s*\(|"
     r"reagendar_cita\s*\(|cancelar_cita\s*\(|suffix_urgencia\s*=",
     re.IGNORECASE,
 )
@@ -110,13 +111,37 @@ CONSULTAR_PRIMER_DIA_DISPONIBLE_DECLARATION = FunctionDeclaration(
 )
 
 
+LISTAR_MIS_CITAS_PROXIMAS_DECLARATION = FunctionDeclaration(
+    name="listar_mis_citas_proximas",
+    description=(
+        "Lista las citas **activas** del paciente asociadas al número de WhatsApp de esta conversación y a la clínica del contexto, "
+        "desde el momento actual en hora de El Salvador (UTC-6) en adelante (incluye el día de hoy si la hora de la cita aún no pasó). "
+        "Úsala cuando pregunte por sus citas, reservas, 'cuándo tengo cita', 'a qué hora es mi cita', etc. "
+        "No tiene parámetros: teléfono y clínica vienen del sistema. "
+        "La respuesta trae un arreglo citas con fecha (YYYY-MM-DD), hora (HH:MM) y servicio (nombre); resume al paciente cada cita con fecha, hora y tipo de servicio. "
+        "Si citas viene vacío, di claramente que no hay citas próximas registradas."
+    ),
+    parameters={"type": "object", "properties": {}, "required": []},
+)
+
+
 # Herramienta agendar_cita para Gemini (function calling)
 # clinica_id se inyecta desde el contexto (webhook); no se pide al usuario.
 AGENDAR_CITA_DECLARATION = FunctionDeclaration(
     name="agendar_cita",
     description=(
         "Agenda una cita en la clínica actual (la del contexto de la conversación) cuando el usuario confirme nombre, fecha, hora y tipo de servicio. "
-        "Solo llama esta función cuando el paciente haya confirmado explícitamente nombre, fecha, hora y servicio (o razón de la cita). "
+        "La hora en 'hora' debe ser la que el paciente eligió para ESTA reserva (HH:00). "
+        "NO reutilices la hora de otra cita mencionada en el historial (ej. una revisión a las 08:00) para una cita nueva de otro servicio salvo que el usuario diga explícitamente que quiere la misma hora. "
+        "Si solo confirmaste el día ('¿te parece bien ese día?' y responde sí) pero aún no hay hora concreta para esta reserva, NO llames esta función todavía: "
+        "primero consultar_disponibilidad(fecha) y ofrece horas_disponibles, o pregunta «¿a qué hora?», y solo entonces llama agendar_cita con esa hora. "
+        "NO uses servicio=evaluacion si el paciente solo dio día/hora o nunca eligió servicio: pregunta qué id del catálogo quiere y, si sugieres evaluación, confirma que acepta evaluacion. "
+        "Usa evaluacion solo con dolor/urgencia ya descritos (bloque del sistema) o si pidió explícitamente evaluación y lo confirmó. "
+        "Cuando ya resumiste en el chat la reserva completa (servicio, fecha y hora) y pediste confirmación explícita con **sí** o **confirmo** para guardar en el sistema, "
+        "y el paciente responde con sí / ok / claro / listo / vale / confirmo / de acuerdo (aceptación clara), llama esta función en ese mismo turno con "
+        "nombre, fecha YYYY-MM-DD, hora HH:00 y servicio (id del catálogo). "
+        "Un mensaje solo de gracias, «muy amable» o cortesía sin sí/confirmo NO cuenta como confirmación: vuelve a pedir sí o confirmo; no llames la función. "
+        "NUNCA digas al paciente que la cita quedó guardada o agendada en el sistema sin haber llamado antes a esta función y recibido su resultado. "
         "Nunca para el mismo día: la cita debe ser a partir de mañana en hora de El Salvador (UTC-6), no hoy. "
         "La fecha y hora deben pasarse en formato normalizado: fecha como YYYY-MM-DD y hora como HH:00 (solo horas en punto, citas de 60 minutos). "
         "El parámetro 'servicio' debe ser el ID del servicio según el catálogo de servicios que tienes en contexto (ej. limpieza, revision, extraccion). "
@@ -128,8 +153,11 @@ AGENDAR_CITA_DECLARATION = FunctionDeclaration(
         "properties": {
             "nombre": {"type": "string", "description": "Nombre completo del paciente"},
             "fecha": {"type": "string", "description": "Fecha de la cita en formato YYYY-MM-DD (ej. 2025-03-15). Debes convertir fechas en lenguaje natural a este formato."},
-            "hora": {"type": "string", "description": "Hora de la cita en formato HH:00 (ej. 10:00 o 14:00). Solo se permiten horas en punto para slots de 60 minutos."},
-            "servicio": {"type": "string", "description": "ID del servicio según el catálogo de servicios (ej. limpieza, revision, extraccion, obturacion, blanqueamiento, ortodoncia_consulta, emergencia). Debe coincidir con uno de los IDs del catálogo. Si el usuario no ha indicado el tipo de cita, pregúntale antes de agendar."},
+            "hora": {
+                "type": "string",
+                "description": "Hora de inicio de ESTA cita en HH:00 (ej. 10:00 o 14:00). Debe ser una hora que el paciente haya elegido o confirmado para esta reserva; no asumas ni copies la hora de otra cita del chat salvo petición explícita del paciente.",
+            },
+            "servicio": {"type": "string", "description": "ID del servicio según el catálogo (ej. limpieza, revision, extraccion, evaluacion). Debe coincidir con un id del catálogo. No uses evaluacion salvo dolor/urgencia ya descritos o evaluación pedida y confirmada por el paciente; si solo dio día/hora, pregunta primero qué servicio quiere."},
             "suffix_urgencia": {
                 "type": "string",
                 "description": "Opcional. Solo con servicio=evaluacion en urgencia/dolor: dolor_post_cita (dolor posprocedimiento o tras visita) o dolor_intenso (dolor fuerte sin atarlo a procedimiento reciente). Omítelo en citas normales.",
@@ -144,7 +172,8 @@ CANCELAR_CITA_DECLARATION = FunctionDeclaration(
     name="cancelar_cita",
     description=(
         "Cancela la cita activa del paciente cuando él lo pida explícitamente (ej. 'quiero cancelar mi cita', 'cancela mi reserva'). "
-        "Solo llama esta función cuando el usuario confirme que quiere cancelar. No tiene parámetros: la cita se identifica por el teléfono y la clínica del contexto."
+        "Solo llama esta función cuando el usuario confirme que quiere cancelar. No tiene parámetros: la cita se identifica por el teléfono y la clínica del contexto. "
+        "No afirmes que la cita quedó cancelada hasta haber llamado esta función y recibido su resultado."
     ),
     parameters={"type": "object", "properties": {}},
 )
@@ -156,7 +185,11 @@ REAGENDAR_CITA_DECLARATION = FunctionDeclaration(
         "Reagenda la cita activa del paciente a una nueva fecha y hora cuando él lo pida (ej. 'quiero cambiar mi cita al viernes', 'reagendar para mañana a las 10'). "
         "La nueva fecha no puede ser hoy: a partir de mañana en hora de El Salvador (UTC-6). "
         "La cita actual se marca como reagendada y se crea una nueva cita activa. Fecha en YYYY-MM-DD y hora en HH:00 (solo horas en punto de 60 minutos). "
-        "Si no indica tipo de servicio, usa el mismo de la cita actual."
+        "Si no indica tipo de servicio, usa el mismo de la cita actual. "
+        "Cuando en el chat ya resumiste la nueva fecha, hora y servicio (si cambia) y pediste **sí** o **confirmo** para guardar el cambio en el sistema, "
+        "y el paciente responde con aceptación explícita (sí, confirmo, ok, claro, listo, vale, de acuerdo), llama esta función en ese mismo turno. "
+        "Gracias o cortesía sola sin sí/confirmo no basta: vuelve a pedir confirmación; no afirmes que ya quedó reagendada. "
+        "No afirmes que la cita quedó reagendada hasta haber llamado esta función y recibido su resultado."
     ),
     parameters={
         "type": "object",
@@ -177,11 +210,16 @@ CITAS_TOOLS = Tool(
     function_declarations=[
         CONSULTAR_DISPONIBILIDAD_DECLARATION,
         CONSULTAR_PRIMER_DIA_DISPONIBLE_DECLARATION,
+        LISTAR_MIS_CITAS_PROXIMAS_DECLARATION,
         AGENDAR_CITA_DECLARATION,
         CANCELAR_CITA_DECLARATION,
         REAGENDAR_CITA_DECLARATION,
     ]
 )
+
+# Herramientas cuyo dict con clave "mensaje" se devuelve tal cual al paciente (éxito o error),
+# sin segunda pasada por el modelo, para no inventar confirmaciones ni suavizar errores.
+CITAS_MUTATION_TOOL_NAMES = frozenset({"agendar_cita", "reagendar_cita", "cancelar_cita"})
 
 # Compatibilidad: herramienta solo agendar (por si se usa en otro flujo).
 AGENDAR_CITA_TOOL = Tool(function_declarations=[AGENDAR_CITA_DECLARATION])
@@ -264,10 +302,11 @@ class GeminiService:
         Flujo:
         - Gemini puede devolver llamadas a funciones (function_calls).
         - Para cada llamada se ejecuta tool_handler(name, args).
-        - Si la herramienta devuelve un dict con clave 'mensaje' y sin 'error',
-          se responde directamente al usuario con ese texto (confirmación de cita).
-        - Si no hay 'mensaje', el resultado se reenvía a Gemini para que genere
-          una respuesta libre con contexto de herramientas.
+        - Para agendar_cita, reagendar_cita y cancelar_cita: si el dict incluye 'mensaje',
+          se devuelve ese texto al usuario tal cual (con o sin 'error'), sin segunda pasada
+          por el modelo, para que no se inventen confirmaciones ni se contradigan errores.
+        - Para el resto de herramientas: si hay 'mensaje' y no hay 'error', mismo retorno directo;
+          en caso contrario el resultado se reenvía a Gemini.
         - reply_language: 'es' o 'en' para mensajes de reintento/fallback si el modelo devuelve texto con fugas de código.
         """
         if self._model is None:
@@ -335,10 +374,15 @@ class GeminiService:
                 name = getattr(fc, "name", None) or ""
                 args = dict(getattr(fc, "args", None) or {})
                 result = tool_handler(name, args)
-                # Si la herramienta devolvió un mensaje claro de confirmación (sin error),
-                # respondemos directamente al usuario con ese texto, sin dar otra vuelta
-                # por el modelo. Esto garantiza que el paciente vea siempre la
-                # confirmación de agendar/reagendar/cancelar.
+                # Citas mutantes: siempre el texto del backend al paciente (éxito o error),
+                # sin re-delegar en el modelo (evita "quedó agendada" cuando falló BQ, etc.).
+                if isinstance(result, dict) and "mensaje" in result and name in CITAS_MUTATION_TOOL_NAMES:
+                    mensaje = str(result["mensaje"]).strip()
+                    if mensaje:
+                        if reply_looks_like_tool_code_leak(mensaje):
+                            return _code_leak_fallback_message(reply_language)
+                        return mensaje
+
                 if isinstance(result, dict) and "mensaje" in result and not result.get("error"):
                     mensaje = str(result["mensaje"]).strip()
                     if mensaje:
@@ -389,11 +433,20 @@ class GeminiService:
         )
         parts.append(
             "Nunca incluyas en tu respuesta al paciente código de programación, llamadas tipo print(...), "
-            "default_api, ni nombres de funciones internas con paréntesis (agendar_cita, consultar_disponibilidad, etc.). "
+            "default_api, ni nombres de funciones internas con paréntesis (agendar_cita, consultar_disponibilidad, listar_mis_citas_proximas, etc.). "
             "Para agendar o consultar horarios debes usar las herramientas del sistema (function calling), no texto que parezca código."
         )
         return "\n".join(parts)
 
 
-__all__ = ["GeminiService", "GeminiServiceError", "reply_looks_like_tool_code_leak"]
+__all__ = [
+    "AGENDAR_CITA_DECLARATION",
+    "AGENDAR_CITA_TOOL",
+    "CITAS_MUTATION_TOOL_NAMES",
+    "CITAS_TOOLS",
+    "LISTAR_MIS_CITAS_PROXIMAS_DECLARATION",
+    "GeminiService",
+    "GeminiServiceError",
+    "reply_looks_like_tool_code_leak",
+]
 

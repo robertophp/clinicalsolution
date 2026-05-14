@@ -58,6 +58,7 @@ from .domain.catalog import (
 from .domain.citas_handlers import (
     _handle_agendar_cita,
     _handle_cancelar_cita,
+    _handle_listar_mis_citas_proximas,
     _handle_reagendar_cita,
     set_conversation_memory_for_cita_handlers,
 )
@@ -68,12 +69,14 @@ from .domain.disponibilidad import (
     _handle_consultar_primer_dia_disponible,
 )
 from .domain.language import _detect_language
+from .domain.reply_booking_guard import claims_booking_saved_without_backend, fallback_ask_explicit_confirm
 from .domain.prompt_clinic import (
     _build_transfer_resolution_context,
     _format_clinic_location_for_prompt,
     _format_opening_hours_for_prompt,
     _format_payment_methods_for_prompt,
     _format_urgency_dolor_prompt_block,
+    format_canonical_calendar_dates_for_prompt,
 )
 from .domain.urgency_calendar import _calendar_suffix_label_for_cita
 from .domain.wa_normalization import _normalize_wa_id_for_storage
@@ -415,7 +418,14 @@ def _generate_and_persist_reply(
         f"Hoy es {dia_semana} {now_local.day} de {mes} de {now_local.year}. "
         f"Fecha de referencia en YYYY-MM-DD: {fecha_ref_iso}. "
         f"Hora actual de referencia HH:MM: {hora_ref_iso}. "
-        "Cuando el usuario diga 'próximo jueves', 'mañana', 'el lunes', etc., calcula la fecha correcta a partir de esta fecha de referencia y pasa a la herramienta en YYYY-MM-DD y HH:00 (solo horas en punto).]\n"
+        "Cuando el usuario diga 'próximo jueves', 'mañana', 'el viernes', etc., OBLIGATORIO: usa la TABLA CANÓNICA de fechas que viene justo debajo; "
+        "cada fila empareja un YYYY-MM-DD con su día de la semana real (no calcules el calendario solo de memoria). "
+        "Pasa a las herramientas siempre en YYYY-MM-DD y HH:00 (solo horas en punto).]\n"
+    )
+    referencia_fecha += format_canonical_calendar_dates_for_prompt(
+        now_local.date(),
+        language=language,
+        num_days=21,
     )
 
     # Siempre incluir nombre y clínica en el contexto para que el asistente responda correctamente en cualquier turno.
@@ -533,7 +543,7 @@ def _generate_and_persist_reply(
     # Instrucción para herramientas de citas (agendar, cancelar, reagendar)
     if language == "en":
         tool_instruction = (
-            "\n\n[You have five appointment-related tools. The clinic is from context (do not ask the user). "
+            "\n\n[You have six appointment-related tools. The clinic is from context (do not ask the user). "
             "BOOKING uses El Salvador local date (UTC-6). Same-day appointments are NOT allowed; earliest day is tomorrow. "
             "(0) consultar_disponibilidad(fecha): REQUIRED before you list or suggest specific appointment start times for a **known** day. "
             "fecha in YYYY-MM-DD (use REFERENCE DATE above for 'Monday', 'tomorrow', etc.). "
@@ -543,23 +553,41 @@ def _generate_and_persist_reply(
             "(1) consultar_primer_dia_disponible(max_dias optional): finds the **first calendar day from tomorrow** with at least one free slot, "
             "scanning up to max_dias days (default 14, max 30). Returns fecha, horas_disponibles, and primeras_tres_horas. "
             "Use for pain/urgency flows (see PAIN / URGENCY block above). "
-            "(2) agendar_cita(nombre, fecha, hora, servicio, suffix_urgencia optional): for new appointments. "
+            "(2) listar_mis_citas_proximas(): no parameters. Use when the patient asks about their appointments, reservations, "
+            "'when is my appointment', or similar. Returns active appointments for this WhatsApp number from now (El Salvador UTC-6) onward: "
+            "each item has fecha (YYYY-MM-DD), hora (HH:MM), and servicio (human-readable). List every row clearly for the patient; if the list is empty, say they have no upcoming active appointments on file. "
+            "(3) agendar_cita(nombre, fecha, hora, servicio, suffix_urgencia optional): for new appointments. "
             "Only pass date and time that follow the BOOKING START TIMES rules above (60-minute visits; last start is 1 hour before closing in each block). "
             "Time must be on the hour only (HH:00). "
+            "NEW BOOKING / ANOTHER SERVICE: For a new appointment (especially a different service than another one mentioned in the thread), "
+            "the 'hora' must be one the patient chose for THIS booking—never assume or copy the time from a previous appointment unless they explicitly ask for the same time. "
+            "If you only asked whether a DAY works (e.g. \"Does that day work?\") and they say yes, do NOT call agendar_cita yet: first call consultar_disponibilidad(fecha) and offer horas_disponibles, or ask \"What time would you like?\", then call agendar_cita only after a concrete hour is chosen or confirmed for this booking. "
             "If the patient asks for an impossible time (e.g. Sunday, or a start at the closing hour such as 17:00 when the block ends at 17:00), do NOT call the tool: explain that the last bookable start is one hour before closing and ask them to pick a valid on-the-hour time. "
             "'servicio' must be the exact 'id' string from the SERVICES CATALOG above (do not invent ids). "
+            "SERVICIO / evaluacion: Do NOT pass servicio=evaluacion when the patient only gave a day and time or never chose a service—ask which catalog id they want, "
+            "and if you suggest an evaluation ask them to confirm they want evaluacion before booking. "
+            "Use evaluacion only when the PAIN / URGENCY block applies (they described pain or urgency) or they clearly asked for a check-up/evaluation and accepted it. "
             "Optional suffix_urgencia: only with servicio=evaluacion for pain flows: dolor_post_cita or dolor_intenso (see PAIN / URGENCY block). "
             "If you already know the patient, use their full name and do not ask. Only ask for name if the appointment is for someone else. "
-            "(3) cancelar_cita(): no parameters. Use when the user asks to cancel their appointment. "
-            "(4) reagendar_cita(fecha, hora, servicio optional, suffix_urgencia optional): when they want to change date/time. Only with date/time within opening hours and with time in HH:00. "
+            "(4) cancelar_cita(): no parameters. Use when the user asks to cancel their appointment. "
+            "(5) reagendar_cita(fecha, hora, servicio optional, suffix_urgencia optional): when they want to change date/time. Only with date/time within opening hours and with time in HH:00. "
             "Date as YYYY-MM-DD and time as HH:00; use the REFERENCE DATE AND TIME above for 'tomorrow', 'next Friday', etc. "
-            "For agendar_cita, cancelar_cita, and reagendar_cita: if the tool returns a 'mensaje' field, use that text for the user. "
-            "For consultar_disponibilidad and consultar_primer_dia_disponible there is usually no 'mensaje': summarize slots in natural language. "
+            "CRITICAL — Call agendar_cita only when you already have a concrete start time (HH:00) for THIS booking that the patient chose or confirmed from available slots. "
+            "If you only confirmed the DAY (e.g. \"Does that day work for your cleaning?\" + \"yes\") with no hour yet for this booking, do NOT call agendar_cita in that turn: first call consultar_disponibilidad(fecha), offer horas_disponibles, or ask for a time, then book after they pick a time (and confirm date+time+service if needed). "
+            "CONFIRMATION before agendar_cita / reagendar_cita: Ask out loud for a clear answer, repeating service (name or catalog id), weekday date, and time, "
+            "and state that you need *yes* or *confirm* to save it in the system—for example: "
+            "\"To save it: [service] on [date] at [HH:00]. Reply *yes* or *confirm* (a thank-you alone is not enough).\" "
+            "If they reply only with thanks, politeness (\"very kind\"), or small talk without *yes* / *confirm*, do NOT call the tool—ask again for *yes* or *confirm*. "
+            "Only after that explicit reply, call agendar_cita or reagendar_cita in the same turn with the agreed fields. "
+            "NEVER tell the patient the appointment is saved, booked, or rescheduled without a successful tool call in that flow. "
+            "For agendar_cita, cancelar_cita, and reagendar_cita: the system shows the patient the exact text returned by the tool (success or error); "
+            "do not claim success before calling the tool. "
+            "For listar_mis_citas_proximas, consultar_disponibilidad and consultar_primer_dia_disponible there is usually no 'mensaje': summarize slots or appointments in natural language. "
             "Never show the patient source code, print(, default_api, or function names with parentheses—use tools or plain language only.]"
         )
     else:
         tool_instruction = (
-            "\n\n[Tienes cinco herramientas relacionadas con citas. La clínica se toma del contexto (no la pidas al usuario). "
+            "\n\n[Tienes seis herramientas relacionadas con citas. La clínica se toma del contexto (no la pidas al usuario). "
             "El agendado usa la fecha local de El Salvador (UTC-6). No hay citas para el mismo día; el primer día posible es mañana. "
             "(0) consultar_disponibilidad(fecha): OBLIGATORIA antes de listar u ofrecer horas concretas de inicio de cita para un día **ya elegido**. "
             "fecha en YYYY-MM-DD (usa la FECHA DE REFERENCIA de arriba para 'el lunes', 'mañana', etc.). "
@@ -569,48 +597,85 @@ def _generate_and_persist_reply(
             "(1) consultar_primer_dia_disponible(max_dias opcional): encuentra el **primer día calendario desde mañana** con al menos un hueco, "
             "revisando hasta max_días días (por defecto 14, máximo 30). Devuelve fecha, horas_disponibles y primeras_tres_horas. "
             "Úsala en flujos de dolor/urgencia (ver bloque DOLOR / URGENCIA arriba). "
-            "(2) agendar_cita(nombre, fecha, hora, servicio, suffix_urgencia opcional): para citas nuevas. "
+            "(2) listar_mis_citas_proximas(): sin parámetros. Úsala cuando el paciente pregunte por sus citas, reservas, "
+            "«¿cuándo tengo cita?», «¿a qué hora es mi cita?» o similar. Devuelve citas **activas** de este número desde ahora (El Salvador UTC-6): "
+            "cada elemento trae fecha (AAAA-MM-DD), hora (HH:MM) y servicio (nombre legible). Enuméralas con fecha, hora y tipo de servicio; si citas está vacío, di que no hay citas próximas registradas. "
+            "(3) agendar_cita(nombre, fecha, hora, servicio, suffix_urgencia opcional): para citas nuevas. "
             "Solo pases fecha y hora que cumplan las reglas de 'HORARIOS PARA INICIAR UNA CITA' de arriba (visitas de 60 min; la última hora de inicio es 1 hora antes del cierre de cada bloque). "
             "La hora debe ir solo en punto (HH:00). "
+            "CITA NUEVA / OTRO SERVICIO: la hora debe ser la que el paciente eligió para ESTA reserva; nunca asumas ni copies la hora de otra cita del historial "
+            "(ej. una revisión a las 08:00) para una limpieza u otro servicio salvo que diga explícitamente que quiere la misma hora. "
+            "Si solo preguntaste si le viene bien el DÍA (ej. «¿Te parece bien ese día para tu limpieza?») y responde sí, aún NO llames agendar_cita en ese turno: "
+            "primero consultar_disponibilidad(fecha), ofrece horas_disponibles o pregunta «¿a qué hora te viene bien?», y solo después de que elija una hora concreta (y confirmes fecha+hora+servicio si aplica) llama agendar_cita. "
             "Si el paciente pide un horario imposible (ej. domingo, o iniciar a la hora de cierre como 17:00 si el bloque cierra a las 17:00), NO llames la herramienta: explica que la última cita del día inicia una hora antes del cierre y pídele una hora válida en punto. "
             "El parámetro 'servicio' debe ser el 'id' exacto de uno de los servicios del catálogo de arriba (no inventes ids). "
+            "SERVICIO / evaluacion: NO uses servicio=evaluacion si el paciente solo dio día y hora o nunca eligió tipo de cita—pregunta qué id del catálogo quiere; "
+            "si sugieres evaluación, pide confirmación explícita de que acepta evaluacion antes de agendar. "
+            "Usa evaluacion solo cuando aplique el bloque DOLOR / URGENCIA (ya describió dolor o urgencia) o pidió claramente evaluación/revisión y lo aceptó. "
             "Opcional suffix_urgencia: solo con servicio=evaluacion en flujos de dolor: dolor_post_cita o dolor_intenso (ver bloque DOLOR / URGENCIA). "
             "Si ya conoces al paciente, usa su nombre completo y no preguntes. Solo pregunta el nombre si la cita es para otra persona. "
-            "(3) cancelar_cita(): sin parámetros. Úsala cuando el usuario pida cancelar su cita (ej. 'quiero cancelar mi cita', 'cancela mi reserva'). "
-            "(4) reagendar_cita(fecha, hora, servicio opcional, suffix_urgencia opcional): cuando pida cambiar la fecha/hora de su cita. Solo con fecha/hora dentro del horario de atención y hora en HH:00. "
+            "(4) cancelar_cita(): sin parámetros. Úsala cuando el usuario pida cancelar su cita (ej. 'quiero cancelar mi cita', 'cancela mi reserva'). "
+            "(5) reagendar_cita(fecha, hora, servicio opcional, suffix_urgencia opcional): cuando pida cambiar la fecha/hora de su cita. Solo con fecha/hora dentro del horario de atención y hora en HH:00. "
             "La fecha en YYYY-MM-DD y hora en HH:00; usa la FECHA Y HORA DE REFERENCIA de arriba para calcular 'mañana', 'próximo viernes', etc. "
             "Para fechas relativas (mañana, próximo lunes, etc.) usa SIEMPRE la referencia indicada arriba y pasa a la herramienta en YYYY-MM-DD y HH:00. "
-            "Para agendar_cita, cancelar_cita y reagendar_cita: si la herramienta devuelve el campo 'mensaje', responde con ese texto al usuario. "
-            "Para consultar_disponibilidad y consultar_primer_dia_disponible normalmente no hay 'mensaje': resume las horas en lenguaje natural. "
+            "CRÍTICO — Llama agendar_cita solo cuando ya tengas una hora de inicio concreta (HH:00) para ESTA reserva, elegida o confirmada por el paciente entre las opciones válidas. "
+            "Si solo confirmaste el DÍA (ej. «¿Te parece bien ese día para tu limpieza?» + «sí») y aún no hay hora para esta cita, NO llames agendar_cita en ese turno: "
+            "primero consultar_disponibilidad(fecha), ofrece horas_disponibles o pregunta «¿a qué hora?», y agendar_cita solo cuando haya hora concreta (y confirmación de fecha+hora+servicio si corresponde). "
+            "CONFIRMACIÓN antes de agendar_cita / reagendar_cita: Pregunta en voz alta de forma explícita, repitiendo servicio (nombre o id del catálogo), fecha con día de la semana y hora, "
+            "y di que hace falta **sí** o **confirmo** para guardarla en el sistema, por ejemplo: "
+            "\"Para registrarla: [servicio] el [fecha] a las [HH:00]. Responde **sí** o **confirmo** (solo gracias o «muy amable» no alcanza).\" "
+            "Si responde solo con gracias, cortesía o charla sin **sí** / **confirmo**, NO llames la herramienta: vuelve a pedir **sí** o **confirmo**. "
+            "Solo con esa respuesta explícita, llama agendar_cita o reagendar_cita en el mismo turno con los datos acordados. "
+            "NUNCA digas que la cita quedó guardada, agendada o reagendada sin una llamada exitosa a la herramienta en ese flujo. "
+            "Para agendar_cita, cancelar_cita y reagendar_cita: el sistema muestra al paciente el texto exacto que devuelve la herramienta (éxito o error); "
+            "no afirmes éxito antes de llamar a la herramienta. "
+            "Para listar_mis_citas_proximas, consultar_disponibilidad y consultar_primer_dia_disponible normalmente no hay 'mensaje': resume las horas o las citas en lenguaje natural. "
             "Nunca muestres al paciente código, print(, default_api ni nombres de funciones con paréntesis: usa las herramientas o lenguaje natural.]"
         )
     system_prompt_effective = system_prompt_effective.strip() + tool_instruction
 
     chat_history = _build_chat_history_with_memory(clinic_id, from_number, body)
 
+    mutation_tool_saved_ok = {"value": False}
+
     def tool_handler(name: str, args: dict) -> dict:
         if name == "consultar_disponibilidad":
             return _handle_consultar_disponibilidad(clinic_id=clinic_id, language=language, args=args)
         if name == "consultar_primer_dia_disponible":
             return _handle_consultar_primer_dia_disponible(clinic_id=clinic_id, language=language, args=args)
+        if name == "listar_mis_citas_proximas":
+            return _handle_listar_mis_citas_proximas(
+                from_number=from_number,
+                clinic_id=clinic_id,
+                language=language,
+            )
         if name == "agendar_cita":
-            return _handle_agendar_cita(
+            out = _handle_agendar_cita(
                 from_number=from_number,
                 clinic_id=clinic_id,
                 language=language,
                 assistant_name=assistant_name,
                 args=args,
             )
+            if isinstance(out, dict) and out.get("mensaje") and not out.get("error"):
+                mutation_tool_saved_ok["value"] = True
+            return out
         if name == "cancelar_cita":
-            return _handle_cancelar_cita(from_number=from_number, clinic_id=clinic_id, language=language)
+            out = _handle_cancelar_cita(from_number=from_number, clinic_id=clinic_id, language=language)
+            if isinstance(out, dict) and out.get("mensaje") and not out.get("error"):
+                mutation_tool_saved_ok["value"] = True
+            return out
         if name == "reagendar_cita":
-            return _handle_reagendar_cita(
+            out = _handle_reagendar_cita(
                 from_number=from_number,
                 clinic_id=clinic_id,
                 language=language,
                 assistant_name=assistant_name,
                 args=args,
             )
+            if isinstance(out, dict) and out.get("mensaje") and not out.get("error"):
+                mutation_tool_saved_ok["value"] = True
+            return out
         return {"error": "Herramienta desconocida", "mensaje": "No pude completar la acción."}
 
     reply_text = gemini_service.generate_reply_with_tools(
@@ -619,6 +684,14 @@ def _generate_and_persist_reply(
         tool_handler=tool_handler,
         reply_language=language,
     )
+    if not mutation_tool_saved_ok["value"] and claims_booking_saved_without_backend(
+        reply_text, language=language
+    ):
+        logging.warning(
+            "Respuesta afirma cita guardada sin herramienta exitosa (clinic_id=%s); se pide confirmación explícita.",
+            clinic_id,
+        )
+        reply_text = fallback_ask_explicit_confirm(language)
     conversation_memory.add_message(clinic_id, from_number, "user", body)
     conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
     return reply_text

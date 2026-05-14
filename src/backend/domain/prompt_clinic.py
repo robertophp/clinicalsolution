@@ -1,8 +1,80 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from ..schemas.clinic import ClinicConfig
+
+_WEEKDAYS_ES = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+_WEEKDAYS_EN = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_MONTHS_ES = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+_MONTHS_EN = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+
+
+def format_canonical_calendar_dates_for_prompt(
+    today_sv: date,
+    *,
+    language: str,
+    num_days: int = 21,
+) -> str:
+    """
+    Tabla YYYY-MM-DD ↔ día de la semana (El Salvador) para el prompt.
+    Evita errores del modelo (ej. llamar 'viernes' a una fecha que en calendario es sábado).
+    """
+    use_en = (language or "").strip().lower() == "en"
+    weekdays = _WEEKDAYS_EN if use_en else _WEEKDAYS_ES
+    months = _MONTHS_EN if use_en else _MONTHS_ES
+    lines: list[str] = []
+    for offset in range(max(1, num_days)):
+        d = today_sv + timedelta(days=offset)
+        wd = weekdays[d.weekday()]
+        month_name = months[d.month - 1]
+        lines.append(f"  {d.isoformat()} | {wd} | {d.day} {month_name} {d.year}")
+    table = "\n".join(lines)
+
+    if use_en:
+        return (
+            "\n\n[CANONICAL DATE TABLE (local clinic date, same as 'today' above). "
+            "Each row is the ONLY correct pairing of YYYY-MM-DD with the weekday. "
+            "If the user says 'Friday' or 'next Friday', pick the row whose weekday column is exactly Friday and use that YYYY-MM-DD in consultar_disponibilidad and agendar_cita. "
+            "NEVER invent dates or mismatch weekday and calendar date (e.g. saying 'Friday May 16' when that row is Saturday is WRONG—fix using this table). "
+            "When you speak naturally to the patient, the weekday and date must match the chosen row.]\n"
+            f"{table}\n"
+        )
+
+    return (
+        "\n\n[TABLA CANÓNICA DE FECHAS (misma fecha local de El Salvador que 'hoy' arriba). "
+        "Cada fila es la ÚNICA forma correcta de emparejar YYYY-MM-DD con el día de la semana. "
+        "Si el usuario dice 'viernes', 'el viernes' o 'próximo viernes', elige la fila cuya columna central sea exactamente viernes y usa ese YYYY-MM-DD en consultar_disponibilidad y agendar_cita. "
+        "NUNCA inventes fechas ni mezcles el número del día con un día de la semana que no corresponda (ej. decir 'viernes 16 de mayo' cuando la fila del 2026-05-16 es sábado es INCORRECTO—corrige usando esta tabla). "
+        "Al hablar con el paciente en español, el día de la semana y la fecha deben coincidir con la fila elegida.]\n"
+        f"{table}\n"
+    )
 
 
 def _format_opening_hours_for_prompt(clinic: ClinicConfig, language: str) -> str:
@@ -254,8 +326,10 @@ def _format_urgency_dolor_prompt_block(language: str) -> str:
     """Instrucciones para dolor/ inflamación / dolor posprocedimiento y uso de herramientas de urgencia."""
     if language == "en":
         return (
-            "\n\n[PAIN / URGENCY – when the patient mentions strong dental pain, swelling, "
-            "or severe pain after a recent treatment at the clinic:]\n"
+            "\n\n[PAIN / URGENCY – **Only use this block when the patient has already mentioned** strong dental pain, swelling, "
+            "or severe pain after a recent treatment at the clinic. Do NOT apply it to generic booking requests (day/time only) "
+            "or small talk; those follow the normal flow and require an explicit catalog service choice—never default to `evaluacion` without pain context "
+            "and never book evaluacion without the patient agreeing to an evaluation.]\n"
             "- Respond with brief empathy (they are being heard) and reassurance that the clinic team will take care of them.\n"
             "- Prefer offering an evaluation appointment: use catalog service id `evaluacion` unless they clearly want a different service; "
             "then follow the normal booking flow.\n"
@@ -269,8 +343,10 @@ def _format_urgency_dolor_prompt_block(language: str) -> str:
             "omit `suffix_urgencia` for ordinary bookings.\n"
         )
     return (
-        "\n\n[DOLOR / URGENCIA – si el paciente menciona dolor dental fuerte, inflamación, "
-        "o mucho dolor después de un tratamiento o visita reciente en la clínica:]\n"
+        "\n\n[DOLOR / URGENCIA – **Usa este bloque solo si el paciente ya describió** dolor dental fuerte, inflamación, "
+        "o mucho dolor después de un tratamiento o visita reciente en la clínica. NO lo apliques a pedidos genéricos de cita (solo día/hora) "
+        "ni a saludos: ahí sigue el flujo normal y hay que elegir servicio del catálogo con claridad—nunca uses `evaluacion` por defecto sin contexto de dolor "
+        "y nunca agendes evaluación sin que el paciente confirme que quiere una evaluación.]\n"
         "- Responde con empatía breve y tranquilidad: el equipo de la clínica está capacitado para ayudarle.\n"
         "- Prioriza ofrecer una **evaluación**: usa el id de catálogo `evaluacion` salvo que deje claro que quiere otro servicio; entonces sigue el flujo normal.\n"
         "- Llama `consultar_primer_dia_disponible` (max_dias opcional 1–30, por defecto 14) para obtener el **primer día con huecos** desde mañana "

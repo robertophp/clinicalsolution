@@ -164,16 +164,18 @@ def _handle_consultar_primer_dia_disponible(clinic_id: str, language: str, args:
             if language == "en":
                 nota = (
                     "This is the first day from tomorrow with at least one free slot. "
-                    "For pain/urgency flows: reply with brief empathy, reassure them expert care will help, "
+                    "For pain/urgency flows only: reply with brief empathy, reassure them expert care will help, "
                     "then offer ONLY these first three start times (primeras_tres_horas) unless they ask for more. "
-                    "Default service suggestion: evaluacion from the catalog; if they want something else, continue the normal booking flow."
+                    "Suggest catalog id `evaluacion` only when the patient already described pain/urgency; "
+                    "otherwise ask which catalog service they want before booking—do not default to evaluacion for a generic date/time request."
                 )
             else:
                 nota = (
                     "Es el primer día (desde mañana) con al menos un hueco disponible. "
-                    "En casos de dolor/urgencia: responde con empatía breve, tranquiliza (está en manos del equipo) "
+                    "Solo en casos de dolor/urgencia ya descritos: responde con empatía breve, tranquiliza (está en manos del equipo) "
                     "y ofrece SOLO las tres primeras horas de primeras_tres_horas salvo que pida más detalle. "
-                    "Sugiere por defecto el servicio evaluacion del catálogo; si quiere otro servicio, sigue el flujo normal de agendado."
+                    "Sugiere el id de catálogo `evaluacion` solo si el paciente ya habló de dolor o urgencia; "
+                    "si solo dio día y hora sin tipo de cita, pregunta qué servicio del catálogo quiere—no uses evaluación por defecto en un pedido genérico."
                 )
             fuente = "google_calendar" if clinic_cfg.calendar_sync_enabled else "solo_horario_sin_calendario"
             out: dict = {

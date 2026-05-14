@@ -1753,18 +1753,6 @@
       "clinic_id": "demo_clinic_1"
     },
     {
-      "id": "limpieza",
-      "name": "Limpieza",
-      "name_en": "Limpieza",
-      "price": "30.00",
-      "currency": "USD",
-      "status": "available",
-      "aliases": [
-        "limpieza"
-      ],
-      "clinic_id": "demo_clinic_1"
-    },
-    {
       "id": "gingivectomia_colocacion_de_poste_de_fibra_de_vidrio_pieza",
       "name": "Gingivectomia + colocacion de poste de fibra de vidrio (pieza",
       "name_en": "Gingivectomia + colocacion de poste de fibra de vidrio (pieza",

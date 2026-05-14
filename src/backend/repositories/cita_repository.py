@@ -188,6 +188,49 @@ def update_latest_cita_transferencia_estado(
     return cita
 
 
+def list_upcoming_activa_citas_for_phone(
+    db: Session,
+    *,
+    clinic_id: str,
+    telefono: str,
+) -> list[Cita]:
+    """
+    Citas con status activa para este teléfono y clínica, desde el instante actual
+    en hora local de El Salvador (UTC-6), ordenadas por fecha y hora de cita.
+
+    Incluye citas del mismo día si la hora de inicio aún no pasó.
+    """
+    cid = (clinic_id or "").strip()
+    tel = (telefono or "").strip()
+    if not cid or not tel:
+        return []
+
+    now_wall = _now_el_salvador().replace(tzinfo=None)
+
+    rows = (
+        db.query(Cita)
+        .filter(
+            Cita.clinic_id == cid,
+            Cita.telefono == tel,
+            Cita.status == CITA_STATUS_ACTIVA,
+        )
+        .order_by(Cita.fecha_cita.asc(), Cita.hora_cita.asc())
+        .all()
+    )
+
+    out: list[Cita] = []
+    for c in rows:
+        if c.fecha_cita is None or c.hora_cita is None:
+            continue
+        hc = c.hora_cita.replace(microsecond=0) if c.hora_cita else None
+        if hc is None:
+            continue
+        start = datetime.combine(c.fecha_cita, hc)
+        if start >= now_wall:
+            out.append(c)
+    return out
+
+
 def get_latest_activa_cita_for_phone(
     db: Session,
     *,
