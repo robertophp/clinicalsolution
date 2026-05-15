@@ -54,6 +54,7 @@ The app exposes a **JSON** endpoint that accepts the same inputs without form en
 ```powershell
 curl -X POST "http://localhost:8000/chat?clinic_id=demo_clinic_1" ^
   -H "Content-Type: application/json" ^
+  -H "Authorization: Bearer TU_INTERNAL_API_KEY" ^
   -d "{\"from_number\": \"+1234567890\", \"body\": \"Hola, quiero agendar una cita\"}"
 ```
 

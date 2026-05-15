@@ -4,17 +4,23 @@ Stores messages per clinic_id + from_number, with TTL and max history limits.
 """
 from __future__ import annotations
 
+import hashlib
+import logging
 import re
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from google.cloud import firestore
+from google.cloud.exceptions import Conflict
 
 from ..config import settings
 
+logger = logging.getLogger(__name__)
 
 # Collection name in Firestore
 COLLECTION_NAME = "agentmemory"
+# Dedup de entregas repetidas del webhook Meta (mismo wamid); TTL opcional en consola GCP.
+META_WEBHOOK_WAMID_DEDUP_COLLECTION = "meta_webhook_wamid_dedup"
 
 
 def _doc_id(clinic_id: str, from_number: str) -> str:
@@ -276,5 +282,30 @@ class ConversationMemoryService:
             merge=True,
         )
 
+    def try_claim_meta_webhook_wamid(self, wamid: str) -> bool:
+        """
+        Dedup de notificaciones Meta duplicadas (mismo ``wamid``).
 
-__all__ = ["ConversationMemoryService", "COLLECTION_NAME"]
+        Retorna ``True`` si esta instancia debe procesar el mensaje (primer ``create`` en Firestore).
+        Retorna ``False`` si ya fue procesado (Meta reintentó el webhook).
+
+        Sin ``wamid`` no hay deduplicación (compatibilidad). Si Firestore falla, fail-open: retorna ``True``
+        y se registra error en log.
+        """
+        w = (wamid or "").strip()
+        if not w:
+            return True
+        key = hashlib.sha256(w.encode("utf-8")).hexdigest()
+        ref = self._db.collection(META_WEBHOOK_WAMID_DEDUP_COLLECTION).document(key)
+        try:
+            ref.create({"wamid": w, "claimed_at": firestore.SERVER_TIMESTAMP})
+            return True
+        except Conflict:
+            logger.info("Meta webhook wamid ya procesado (dedup), se omite: %s...", w[:24])
+            return False
+        except Exception:
+            logger.exception("Meta webhook dedup: error Firestore; se procesa el mensaje (fail-open)")
+            return True
+
+
+__all__ = ["ConversationMemoryService", "COLLECTION_NAME", "META_WEBHOOK_WAMID_DEDUP_COLLECTION"]

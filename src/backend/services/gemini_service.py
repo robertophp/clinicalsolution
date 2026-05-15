@@ -14,6 +14,7 @@ from vertexai.generative_models import (
 )
 
 from ..config import settings
+from .gemini_vertex_call import call_with_timeout_and_retries
 
 # El modelo a veces escribe pseudo-código (p. ej. print(default_api.agendar_cita(...))) en lugar de usar function calling.
 _TOOL_CODE_LEAK_RE = re.compile(
@@ -243,6 +244,37 @@ class GeminiService:
 
         self._init_vertex_ai()
 
+    def _vertex_generate(
+        self,
+        *,
+        contents,
+        generation_config: GenerationConfig | None = None,
+        tools: list[Tool] | None = None,
+    ):
+        if self._model is None:
+            raise GeminiServiceError("Modelo Gemini no inicializado.")
+
+        def call():
+            if tools is None:
+                return self._model.generate_content(contents, generation_config=generation_config)
+            return self._model.generate_content(
+                contents,
+                tools=tools,
+                generation_config=generation_config,
+            )
+
+        try:
+            return call_with_timeout_and_retries(
+                call,
+                timeout_seconds=settings.GEMINI_GENERATE_TIMEOUT_SECONDS,
+                max_attempts=settings.GEMINI_MAX_GENERATION_ATTEMPTS,
+                operation_label="gemini_generate_content",
+            )
+        except Exception as exc:
+            raise GeminiServiceError(
+                f"Error generando contenido con Gemini: {type(exc).__name__}: {exc}"
+            ) from exc
+
     def _init_vertex_ai(self) -> None:
         """Inicializa Vertex AI y el modelo Gemini."""
         try:
@@ -271,7 +303,9 @@ class GeminiService:
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
             )
-            response = self._model.generate_content(prompt, generation_config=config)
+            response = self._vertex_generate(contents=prompt, generation_config=config)
+        except GeminiServiceError:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise GeminiServiceError(
                 f"Error generando contenido con Gemini: {type(exc).__name__}: {exc}"
@@ -324,11 +358,13 @@ class GeminiService:
 
         while used_tools < max_tool_rounds:
             try:
-                response = self._model.generate_content(
-                    contents,
-                    tools=[CITAS_TOOLS],
+                response = self._vertex_generate(
+                    contents=contents,
                     generation_config=config,
+                    tools=[CITAS_TOOLS],
                 )
+            except GeminiServiceError:
+                raise
             except Exception as exc:
                 raise GeminiServiceError(
                     f"Error generando contenido con Gemini: {type(exc).__name__}: {exc}"

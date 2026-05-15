@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     # Solo desarrollo local: no validar firma (no usar en producción).
     META_WEBHOOK_SKIP_SIGNATURE_VERIFY: bool = False
 
+    # Entorno de despliegue: en ``production`` / ``prod`` se valida configuración crítica al arrancar.
+    APP_ENV: str = "development"
+
+    # API key para ``POST /chat`` y rutas ``GET /health/gcp``, ``GET /health/meta``.
+    # En producción debe estar definida (ver validación en ``create_app``). Si está vacía, esas rutas quedan abiertas (solo desarrollo).
+    INTERNAL_API_KEY: Optional[str] = None
+
+    # Vertex / Gemini: timeout por llamada a ``generate_content`` y reintentos solo en fallos transitorios.
+    GEMINI_GENERATE_TIMEOUT_SECONDS: float = 60.0
+    GEMINI_MAX_GENERATION_ATTEMPTS: int = 3  # primer intento + hasta 2 reintentos con backoff
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

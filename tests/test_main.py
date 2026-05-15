@@ -27,6 +27,8 @@ from backend.schemas import ClinicConfig, PaymentMethodLine
 from backend.services.calendar_service import CalendarServiceError
 from backend.services.intent_classifier import Intent
 
+INTERNAL_API_HEADERS = {"Authorization": "Bearer test-internal-api-key"}
+
 
 @pytest.fixture
 def mock_memory():
@@ -216,6 +218,7 @@ async def test_chat_unknown_clinic_returns_error_message(client: AsyncClient):
     response = await client.post(
         "/chat?clinic_id=unknown_clinic",
         json={"from_number": "+123", "body": "Hola"},
+        headers=INTERNAL_API_HEADERS,
     )
     assert response.status_code == 200
     data = response.json()
@@ -235,6 +238,7 @@ async def test_chat_with_mocked_gemini_returns_reply(client: AsyncClient, mock_m
         response = await client.post(
             "/chat?clinic_id=demo_clinic_1",
             json={"from_number": "+1234567890", "body": "Hola"},
+            headers=INTERNAL_API_HEADERS,
         )
     assert response.status_code == 200
     data = response.json()
@@ -254,11 +258,43 @@ async def test_chat_gemini_error_returns_fallback(client: AsyncClient, mock_memo
         response = await client.post(
             "/chat?clinic_id=demo_clinic_1",
             json={"from_number": "+123", "body": "Hola"},
+            headers=INTERNAL_API_HEADERS,
         )
     assert response.status_code == 200
     data = response.json()
     assert "reply" in data
     assert "problema temporal" in data["reply"].lower() or "inténtalo" in data["reply"].lower()
+
+
+@pytest.mark.asyncio
+async def test_chat_without_internal_key_returns_401(client: AsyncClient):
+    response = await client.post(
+        "/chat?clinic_id=demo_clinic_1",
+        json={"from_number": "+123", "body": "Hola"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_chat_rejects_wrong_internal_key(client: AsyncClient):
+    response = await client.post(
+        "/chat?clinic_id=demo_clinic_1",
+        json={"from_number": "+123", "body": "Hola"},
+        headers={"Authorization": "Bearer wrong-key"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_health_gcp_without_key_returns_401(client: AsyncClient):
+    response = await client.get("/health/gcp")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_health_meta_without_key_returns_401(client: AsyncClient):
+    response = await client.get("/health/meta")
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 
+from ..internal_auth import require_internal_api_key
 from ...bootstrap import WHATSAPP_PHONE_NUMBER_ID_TO_CLINIC, conversation_memory, gemini_service, settings
 
 router = APIRouter(tags=["health"])
@@ -14,11 +15,12 @@ async def healthcheck() -> Response:
     return Response(content="OK", media_type="text/plain")
 
 
-@router.get("/health/gcp")
+@router.get("/health/gcp", dependencies=[Depends(require_internal_api_key)])
 async def healthcheck_gcp() -> dict:
     """
     Diagnóstico de configuración GCP: credenciales, Firestore y Vertex AI (Gemini).
     Útil para ver qué falla antes de probar por WhatsApp.
+    Requiere la misma API key que ``POST /chat`` si ``INTERNAL_API_KEY`` está definida.
     """
     result: dict = {
         "config": {"project_id": settings.PROJECT_ID, "location": settings.LOCATION},
@@ -45,11 +47,12 @@ async def healthcheck_gcp() -> dict:
     return result
 
 
-@router.get("/health/meta")
+@router.get("/health/meta", dependencies=[Depends(require_internal_api_key)])
 async def health_meta() -> dict:
     """
     Comprueba que las variables Meta estén cargadas (sin exponer secretos)
     y qué phone_number_id están mapeados a clínicas.
+    Requiere la misma API key que ``POST /chat`` si ``INTERNAL_API_KEY`` está definida.
     """
     return {
         "meta_waba_id_configured": bool((settings.META_WABA_ID or "").strip()),

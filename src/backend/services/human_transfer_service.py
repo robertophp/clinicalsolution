@@ -7,6 +7,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Mapping, Sequence
 
 from .gemini_service import GeminiService, GeminiServiceError
@@ -15,6 +16,78 @@ from .human_transfer_topics import TransferTopicDefinition, format_topics_for_pr
 logger = logging.getLogger(__name__)
 
 PatientSummaryIntent = Literal["approve", "revise", "unclear"]
+
+_ES_WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+_ES_MONTHS = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+_EN_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_EN_MONTHS = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+
+
+def _now_el_salvador() -> datetime:
+    """Hora local de El Salvador (UTC-6, sin DST), alineada con el prompt de conversación."""
+    return datetime.now(timezone(timedelta(hours=-6)))
+
+
+def _reference_context_block_for_transfer_summary(*, language: str) -> str:
+    """Ancla temporal para que el resumen no confunda pasado/futuro ni invente causalidad."""
+    now = _now_el_salvador()
+    iso = now.strftime("%Y-%m-%d")
+    hhmm = now.strftime("%H:%M")
+    use_en = (language or "").strip().lower().startswith("en")
+    if use_en:
+        wd = _EN_WEEKDAYS[now.weekday()]
+        mon = _EN_MONTHS[now.month - 1]
+        return (
+            "REFERENCE — El Salvador local time (UTC-6, no DST): "
+            f"{wd}, {mon} {now.day}, {now.year}. "
+            f"Today's date (YYYY-MM-DD): {iso}. Current local time (HH:MM): {hhmm}.\n"
+            "When writing the specialist summary:\n"
+            "- Use today's date as the anchor: any date strictly after today is in the FUTURE, not the past.\n"
+            "- Do not invent appointments, dates, or causal links (e.g. pain 'after' a visit) unless the patient clearly said so in the thread.\n"
+            "- Avoid wording that treats a future appointment as already past "
+            "(e.g. 'after a review scheduled for [future date]'). "
+            "If an upcoming visit is mentioned, say it is scheduled for that date; do not imply the visit already occurred.\n"
+        )
+    wd = _ES_WEEKDAYS[now.weekday()]
+    mon = _ES_MONTHS[now.month - 1]
+    return (
+        "REFERENCIA — Hora local de El Salvador (UTC-6, sin horario de verano): "
+        f"hoy es {wd} {now.day} de {mon} de {now.year}. "
+        f"Fecha de hoy en YYYY-MM-DD: {iso}. Hora local actual (HH:MM): {hhmm}.\n"
+        "Al redactar el resumen para el especialista:\n"
+        "- Usa la fecha de hoy como ancla: cualquier fecha estrictamente posterior a hoy es FUTURO, no pasado.\n"
+        "- No inventes citas, fechas ni vínculos causales (p. ej. dolor «posterior a» una visita) si el paciente no lo dijo claro en el hilo.\n"
+        "- Evita redactar como si una cita futura ya hubiera ocurrido "
+        "(p. ej. «posterior a una revisión agendada para [fecha futura]»). "
+        "Si hay cita próxima mencionada, dilo como «cita programada para el …» sin implicar que ya pasó.\n"
+    )
+
 
 _TRANSFER_JSON_RE = re.compile(r"\{[\s\S]*\}")
 _ROLE_PREFIX_RE = re.compile(r"^(Asistente|Usuario|Assistant|User)\s*:\s*", re.IGNORECASE)
@@ -263,6 +336,8 @@ def generate_transfer_summary(
             "Write ONLY the body text that an internal human specialist will read (English).\n"
             "- Maximum 3–4 short lines; warm-professional and empathetic (e.g. 'concern' over harsh wording).\n"
             "- No medical diagnosis; include concrete facts (dates, amounts, symptoms context).\n"
+            "- Follow the temporal reference block below: treat today as the anchor; never describe a future appointment "
+            "as if it were already in the past.\n"
             "- Do NOT address the patient. Do NOT ask questions. Do NOT use labels like 'Executive summary:' "
             "or role prefixes like 'Assistant:'.\n"
             "- Do NOT repeat phrases such as 'I've prepared this summary' or 'Is it correct?'.\n"
@@ -285,6 +360,8 @@ def generate_transfer_summary(
             "- Máximo 3–4 líneas; tono profesional, cercano y empático: ante molestias usa "
             "\"inquietud\" o \"preocupación\" antes que \"insatisfacción\" cuando aplique.\n"
             "- Sin diagnóstico médico; incluye qué necesita el paciente y datos concretos (fechas, montos, contexto).\n"
+            "- Sigue el bloque de referencia temporal de abajo: hoy es la ancla; no describas una cita futura "
+            "como si ya hubiera ocurrido.\n"
             "- NO te dirijas al paciente. NO hagas preguntas. NO uses etiquetas tipo \"Resumen ejecutivo:\" "
             "ni prefijos \"Asistente:\" o \"Usuario:\".\n"
             "- NO repitas frases del bot como \"He preparado/actualizado el resumen\" ni preguntas como "
@@ -294,7 +371,20 @@ def generate_transfer_summary(
             "Solo párrafos de texto plano.\n"
         )
 
-    prompt_parts = ["=== Instrucciones ===", instructions, ""]
+    ref_header = (
+        "=== Temporal context (El Salvador) ==="
+        if use_en
+        else "=== Contexto temporal (El Salvador) ==="
+    )
+    ref_block = _reference_context_block_for_transfer_summary(language=language)
+    prompt_parts = [
+        "=== Instrucciones ===",
+        instructions,
+        "",
+        ref_header,
+        ref_block,
+        "",
+    ]
     if hist:
         prompt_parts += ["=== Historial ===", hist, ""]
     prompt_parts += ["=== Último mensaje del paciente ===", (current_message or "").strip(), "", "Resumen:"]

@@ -19,6 +19,10 @@
 | Lógica al guardar/cancelar/reagendar cita | `domain/citas_handlers.py`, `repositories/cita_repository.py` |
 | Definición de tools para Gemini | `services/gemini_service.py` |
 | Derivación a humano | `services/human_transfer_service.py`, `services/human_transfer_topics.py`, `policies.json` + opcional `transfer_topics.json` |
+| Proteger `/chat` y diagnósticos `/health/gcp`, `/health/meta` | Variable `INTERNAL_API_KEY`; dependencia `api/internal_auth.py` |
+| Arranque en producción (`APP_ENV=production`) | `api/startup_checks.py` (Meta + API key) |
+| Timeout / reintentos Vertex Gemini | `services/gemini_vertex_call.py` + `services/gemini_service.py` (`GEMINI_*` en config) |
+| Dedup webhook Meta (`wamid`) | Firestore `meta_webhook_wamid_dedup`; `ConversationMemoryService.try_claim_meta_webhook_wamid` |
 
 ## Layout del paquete `backend`
 

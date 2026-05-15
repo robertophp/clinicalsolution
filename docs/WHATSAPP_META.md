@@ -33,6 +33,10 @@ Ver [`.env.example`](../.env.example). Mínimo para Meta:
 
 Meta hará un **GET** a esa URL para verificar; el backend responde con el `hub.challenge`.
 
+## Reintentos y duplicados (producción / Cloud Run)
+
+Meta puede **reintentar** el mismo `POST` si la respuesta tarda o falla. Para no procesar dos veces el mismo mensaje, el backend guarda el **`wamid`** (`messages[].id`) en Firestore (colección `meta_webhook_wamid_dedup`): si ya existía, se responde **200** sin generar otra respuesta. Opcional: añade **TTL** a esa colección en Firestore para borrar claves antiguas.
+
 ## Configurar la clínica 1
 
 En `data/clinics/demo_clinic_1/site.json`, pon:

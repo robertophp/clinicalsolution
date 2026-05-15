@@ -58,11 +58,29 @@ PROJECT_ID=tu-proyecto-gcp
 LOCATION=us-central1
 TWILIO_AUTH=token_o_secret_de_twilio_opcional
 
+# Entorno: en production se valida configuración Meta y obligatoriedad de INTERNAL_API_KEY.
+# APP_ENV=development
+
+# API key para POST /chat y GET /health/gcp, /health/meta (Bearer o X-API-Key). En producción es obligatoria.
+# INTERNAL_API_KEY=genera_un_valor_largo_aleatorio
+
 # Memoria de conversación (Firestore). Opcional; por defecto: 30 min TTL, 5 mensajes de contexto, 20 guardados.
 # CONVERSATION_TTL_MINUTES=30
 # CONVERSATION_MAX_HISTORY=5
 # CONVERSATION_MAX_STORED=20
+
+# Vertex Gemini: timeout por llamada (s) y máximo de intentos (1er intento + reintentos con backoff).
+# GEMINI_GENERATE_TIMEOUT_SECONDS=60
+# GEMINI_MAX_GENERATION_ATTEMPTS=3
 ```
+
+### Endpoint `/chat` y diagnósticos
+
+- **`POST /chat`**: si defines **`INTERNAL_API_KEY`**, cada petición debe incluir `Authorization: Bearer <INTERNAL_API_KEY>` o `X-API-Key: <INTERNAL_API_KEY>`. Si la variable está vacía o no existe, el endpoint queda abierto (solo conviene en local).
+- **`GET /health`**: sigue siendo público (respuesta `OK`).
+- **`GET /health/gcp`** y **`GET /health/meta`**: usan la misma API key que `/chat` cuando `INTERNAL_API_KEY` está definida.
+
+Con **`APP_ENV=production`** (o `prod`), al arrancar la app se exige `INTERNAL_API_KEY` no vacío; si además hay **`META_WHATSAPP_ACCESS_TOKEN`**, deben existir **`META_APP_SECRET`** y **`META_WEBHOOK_SKIP_SIGNATURE_VERIFY=false`**.
 
 ### Secretos y credenciales
 
@@ -90,6 +108,10 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
   - `Body`: texto del mensaje.
 
 La respuesta será TwiML con un `<Message>` generado por Gemini usando el `system_prompt` configurado para la clínica. El historial de los últimos mensajes del usuario (por número y clínica) se guarda en **Firestore** y se envía a Gemini como contexto; tras X minutos de inactividad solo se usa lo reciente (configurable con `CONVERSATION_TTL_MINUTES`). Necesitas tener Firestore (modo nativo) habilitado en tu proyecto GCP.
+
+### WhatsApp Cloud (Meta): reintentos del webhook
+
+Meta puede enviar el mismo mensaje varias veces. El backend deduplica por **`wamid`** (campo `id` del mensaje) con un documento en Firestore en la colección **`meta_webhook_wamid_dedup`**: el segundo envío recibe **200** sin volver a llamar a Gemini ni a Graph API. Opcional: configura **TTL** sobre esa colección en la consola de GCP para limpiar claves antiguas.
 
 ### BigQuery: tabla de citas
 

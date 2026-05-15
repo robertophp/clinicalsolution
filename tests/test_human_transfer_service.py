@@ -1,6 +1,7 @@
 """Tests unitarios para derivación a especialista (sin Vertex AI)."""
 
 from backend.services.human_transfer_service import (
+    _reference_context_block_for_transfer_summary,
     build_specialist_derivation_message,
     classify_patient_summary_response,
     format_patient_phone_display,
@@ -80,3 +81,18 @@ def test_classify_patient_summary_approve_heuristic_en():
         )
         == "approve"
     )
+
+
+def test_transfer_summary_reference_block_es_has_anchor_and_rules():
+    b = _reference_context_block_for_transfer_summary(language="es")
+    assert "REFERENCIA" in b
+    assert "Fecha de hoy en YYYY-MM-DD:" in b
+    assert "FUTURO" in b
+    assert "posterior" in b.lower()
+
+
+def test_transfer_summary_reference_block_en_has_anchor_and_rules():
+    b = _reference_context_block_for_transfer_summary(language="en")
+    assert "REFERENCE" in b
+    assert "Today's date (YYYY-MM-DD):" in b
+    assert "FUTURE" in b

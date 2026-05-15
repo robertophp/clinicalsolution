@@ -4,8 +4,9 @@ import logging
 import sys
 import traceback
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from ..internal_auth import require_internal_api_key
 from ...bootstrap import CLINICS_BY_ID
 from ...schemas import ChatRequest, ChatResponse
 from ...services.gemini_service import GeminiServiceError
@@ -13,7 +14,7 @@ from ...services.gemini_service import GeminiServiceError
 router = APIRouter(tags=["chat"])
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat", response_model=ChatResponse, dependencies=[Depends(require_internal_api_key)])
 async def chat_json(
     clinic_id: str = Query(..., description="Identificador de la clínica (?clinic_id=xxx)"),
     payload: ChatRequest | None = None,
@@ -21,6 +22,9 @@ async def chat_json(
     """
     JSON endpoint to simulate the WhatsApp flow for local testing.
     Same logic as /whatsapp but accepts JSON and returns JSON (no TwiML).
+
+    Si ``INTERNAL_API_KEY`` está definido en entorno, envía
+    ``Authorization: Bearer <token>`` o ``X-API-Key: <token>``.
     """
     if payload is None:
         payload = ChatRequest(from_number="", body="")

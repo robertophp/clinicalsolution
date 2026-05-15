@@ -126,6 +126,7 @@ class MetaWhatsappIncoming:
     is_text: bool
     phone_number_id: str
     wa_from: str
+    wamid: str
     text_body: str = ""
     media_type: str = ""
 
@@ -149,6 +150,7 @@ def extract_incoming_whatsapp_events(data: dict[str, Any]) -> list[MetaWhatsappI
             phone_number_id = (meta.get("phone_number_id") or "").strip()
             for msg in value.get("messages") or []:
                 from_id = (msg.get("from") or "").strip()
+                wamid = (msg.get("id") or "").strip()
                 if not phone_number_id or not from_id:
                     continue
                 mtype = (msg.get("type") or "").strip().lower()
@@ -158,9 +160,10 @@ def extract_incoming_whatsapp_events(data: dict[str, Any]) -> list[MetaWhatsappI
                     if body:
                         out.append(
                             MetaWhatsappIncoming(
-                                True,
-                                phone_number_id,
-                                from_id,
+                                is_text=True,
+                                phone_number_id=phone_number_id,
+                                wa_from=from_id,
+                                wamid=wamid,
                                 text_body=body,
                             )
                         )
@@ -168,9 +171,10 @@ def extract_incoming_whatsapp_events(data: dict[str, Any]) -> list[MetaWhatsappI
                 if mtype:
                     out.append(
                         MetaWhatsappIncoming(
-                            False,
-                            phone_number_id,
-                            from_id,
+                            is_text=False,
+                            phone_number_id=phone_number_id,
+                            wa_from=from_id,
+                            wamid=wamid,
                             media_type=mtype,
                         )
                     )

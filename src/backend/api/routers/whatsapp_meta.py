@@ -9,6 +9,7 @@ from fastapi.responses import PlainTextResponse, Response
 from ...bootstrap import (
     CLINICS_BY_ID,
     WHATSAPP_PHONE_NUMBER_ID_TO_CLINIC,
+    conversation_memory,
     settings,
 )
 from ...domain.wa_normalization import _normalize_wa_id_for_storage
@@ -90,6 +91,10 @@ async def meta_whatsapp_webhook(request: Request) -> Response:
             continue
 
         from_number = _normalize_wa_id_for_storage(ev.wa_from)
+
+        if not conversation_memory.try_claim_meta_webhook_wamid(ev.wamid):
+            continue
+
         if ev.is_text:
             try:
                 from ...bootstrap import _generate_and_persist_reply
