@@ -47,7 +47,7 @@ async def meta_whatsapp_webhook(request: Request) -> Response:
     """
     Webhook WhatsApp Cloud API (Meta). JSON entrante; respuesta al usuario vía Graph API.
 
-    - Identifica la clínica por metadata.phone_number_id → whatsapp_phone_number_id en clinics_mock.json.
+    - Identifica la clínica por metadata.phone_number_id → whatsapp_phone_number_id en ``data/clinics/<id>/site.json``.
     - demo_clinic_2 sin phone_number_id sigue usando solo Twilio hasta que la agregues.
     """
     raw = await request.body()
@@ -80,7 +80,7 @@ async def meta_whatsapp_webhook(request: Request) -> Response:
         if not clinic_id:
             logging.warning(
                 "Meta webhook: phone_number_id no asignado a ninguna clínica: %s. "
-                "Añade whatsapp_phone_number_id en clinics_mock.json",
+                "Añade whatsapp_phone_number_id en data/clinics/<clinic_id>/site.json",
                 ev.phone_number_id,
             )
             continue

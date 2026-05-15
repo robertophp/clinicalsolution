@@ -1,8 +1,9 @@
 """
 Temas configurables que disparan derivación a un especialista humano vía WhatsApp.
 
-Para ampliar el alcance, añade entradas a ``DEFAULT_TRANSFER_TOPICS`` o filtra por clínica
-con ``human_transfer_topic_keys`` en ``clinics_mock.json`` (solo se aplican las claves listadas).
+Para ampliar el alcance, añade entradas a ``DEFAULT_TRANSFER_TOPICS``, filtra por clínica con
+``human_transfer_topic_keys`` en ``policies.json``, o define ``transfer_topics_file`` en esa misma
+carpeta para sustituir el catálogo por clínica.
 """
 from __future__ import annotations
 
@@ -16,6 +17,9 @@ class TransferTopicDefinition:
     key: str
     description_es: str
     description_en: str
+
+
+_CLINIC_TRANSFER_TOPIC_OVERRIDES: dict[str, tuple[TransferTopicDefinition, ...]] = {}
 
 
 DEFAULT_TRANSFER_TOPICS: tuple[TransferTopicDefinition, ...] = (
@@ -73,14 +77,36 @@ DEFAULT_TRANSFER_TOPICS: tuple[TransferTopicDefinition, ...] = (
 )
 
 
-def topics_for_clinic_keys(keys_filter: list[str] | None) -> tuple[TransferTopicDefinition, ...]:
-    """Si ``keys_filter`` tiene valores, solo devuelve temas cuya ``key`` esté incluida."""
+def set_transfer_topic_overrides(mapping: dict[str, tuple[TransferTopicDefinition, ...]]) -> None:
+    """Reemplaza el mapa de temas personalizados por clínica (lo invoca ``clinic_loader`` al arrancar)."""
+    _CLINIC_TRANSFER_TOPIC_OVERRIDES.clear()
+    _CLINIC_TRANSFER_TOPIC_OVERRIDES.update(mapping)
+
+
+def _filter_topics_by_keys(
+    topics: tuple[TransferTopicDefinition, ...],
+    keys_filter: list[str] | None,
+) -> tuple[TransferTopicDefinition, ...]:
     if not keys_filter:
-        return DEFAULT_TRANSFER_TOPICS
+        return topics
     allowed = {k.strip() for k in keys_filter if (k or "").strip()}
     if not allowed:
-        return DEFAULT_TRANSFER_TOPICS
-    return tuple(t for t in DEFAULT_TRANSFER_TOPICS if t.key in allowed)
+        return topics
+    return tuple(t for t in topics if t.key in allowed)
+
+
+def topics_for_clinic_keys(keys_filter: list[str] | None) -> tuple[TransferTopicDefinition, ...]:
+    """Si ``keys_filter`` tiene valores, solo devuelve temas cuya ``key`` esté incluida."""
+    return _filter_topics_by_keys(DEFAULT_TRANSFER_TOPICS, keys_filter)
+
+
+def resolve_transfer_topics_for_clinic(
+    clinic_id: str,
+    keys_filter: list[str] | None,
+) -> tuple[TransferTopicDefinition, ...]:
+    """Temas base por clínica (override opcional desde JSON) y filtro por ``human_transfer_topic_keys``."""
+    base = _CLINIC_TRANSFER_TOPIC_OVERRIDES.get(clinic_id, DEFAULT_TRANSFER_TOPICS)
+    return _filter_topics_by_keys(base, keys_filter)
 
 
 def format_topics_for_prompt(topics: tuple[TransferTopicDefinition, ...], language: str) -> str:
@@ -97,5 +123,7 @@ __all__ = [
     "DEFAULT_TRANSFER_TOPICS",
     "TransferTopicDefinition",
     "format_topics_for_prompt",
+    "resolve_transfer_topics_for_clinic",
+    "set_transfer_topic_overrides",
     "topics_for_clinic_keys",
 ]

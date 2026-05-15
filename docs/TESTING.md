@@ -5,7 +5,7 @@
 **Clinica Assistant Agent** is a backend for a **WhatsApp dental clinic assistant**:
 
 - **Twilio** receives WhatsApp messages and forwards them to your server.
-- Your server identifies the **clinic** via `?clinic_id=xxx`, loads that clinic’s **system prompt** from `src/backend/data/clinics_mock.json`.
+- Your server identifies the **clinic** via `?clinic_id=xxx`, loads that clinic’s **system prompt** from `src/backend/data/clinics/<clinic_id>/brand.json` (y el resto de config en la misma carpeta; ver [CLINIC_DATA.md](CLINIC_DATA.md)).
 - **Vertex AI Gemini 1.5 Flash** generates a reply using that prompt and the user message.
 - The reply is sent back as **TwiML** so Twilio can deliver it on WhatsApp.
 
@@ -99,7 +99,7 @@ Use the printed URL (e.g. `https://something.loca.lt`) in Twilio the same way as
 From project root with venv activated:
 
 ```powershell
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 pytest tests/ -v
 ```
 

@@ -9,7 +9,7 @@ Backend para un asistente de IA para clínicas dentales sobre WhatsApp usando:
 - **SQLAlchemy + BigQuery** como base de datos.
 - **pydantic-settings** para configuración vía variables de entorno / `.env`.
 
-Documentación adicional: [**Arquitectura**](docs/ARCHITECTURE.md) · [**Contribuir**](docs/CONTRIBUTING.md)
+Documentación adicional: [**Arquitectura**](docs/ARCHITECTURE.md) · [**Datos por clínica**](docs/CLINIC_DATA.md) · [**Contribuir**](docs/CONTRIBUTING.md)
 
 ### Estructura principal
 
@@ -18,12 +18,12 @@ El código del paquete Python vive bajo **`src/backend/`** (layout *src*). El m�
 - `src/backend/config.py`: carga configuración con `pydantic-settings` (PROJECT_ID, LOCATION, TWILIO_AUTH).
 - `src/backend/database.py`: configuración de SQLAlchemy con dialecto BigQuery y modelo `Cita`.
 - `src/backend/services/gemini_service.py`: clase `GeminiService` que envuelve Gemini 1.5 Flash.
-- `src/backend/data/clinics_mock.json`: configuración mock de clínicas y sus `system_prompt`.
+- `src/backend/data/clinics/<clinic_id>/`: configuración por tenant (`brand.json`, `site.json`, `policies.json`); ver [docs/CLINIC_DATA.md](docs/CLINIC_DATA.md).
 - `src/backend/data/services_catalog.json`: catálogo de servicios (id, nombre, precio, disponibilidad) para que el asistente informe precios y guarde el tipo de cita en BigQuery.
 - `src/backend/main.py`: entry ASGI (`app = create_app()`).
 - `src/backend/api/app_factory.py` y `src/backend/api/routers/`: rutas HTTP agrupadas (health, chat, WhatsApp Twilio/Meta, jobs).
 - `src/backend/bootstrap.py`: orquestación (clínicas, Gemini, memoria, `_generate_and_persist_reply` y lógica de conversación).
-- `src/backend/domain/conversation_prompt.py`: armado del system prompt efectivo (referencia de fechas, horarios, catálogo, instrucciones de herramientas de citas).
+- `src/backend/domain/conversation_prompt.py` y `src/backend/templates/prompt/`: armado del system prompt (referencia de fechas, horarios, catálogo, instrucciones de herramientas vía Jinja2).
 - `src/backend/services/conversation_memory.py`: memoria de conversación en Firestore (historial por usuario/clínica, TTL e inactividad).
 - `src/backend/services/human_transfer_topics.py` y `src/backend/services/human_transfer_service.py`: derivación a especialista humano por WhatsApp (detección con Gemini, resumen y envío vía Graph API).
 
@@ -71,9 +71,9 @@ TWILIO_AUTH=token_o_secret_de_twilio_opcional
 
 ### Checklist: agregar una nueva clínica
 
-1. Añade un objeto en `src/backend/data/clinics_mock.json` con `id`, `name`, `system_prompt` / `system_prompt_en`, `assistant_name`, `opening_hours`, `whatsapp_phone_number_id` (Meta), `calendar_id` / `calendar_sync_enabled`, `specialist_whatsapp` si aplica, `payment_methods`, etc.
+1. Crea `src/backend/data/clinics/<nuevo_id>/` con `brand.json`, `site.json` y `policies.json` (detalle en [docs/CLINIC_DATA.md](docs/CLINIC_DATA.md)).
 2. Añade o filtra entradas en `src/backend/data/services_catalog.json` (`clinic_id` de la clínica o `"*"` para compartidos).
-3. Verifica el mapeo de `whatsapp_phone_number_id` → clínica (`domain/clinics_config.py`).
+3. Verifica el mapeo de `whatsapp_phone_number_id` → clínica (`domain/clinic_loader.py` + `build_whatsapp_phone_number_id_map`).
 4. Prueba un mensaje de WhatsApp (o `/chat`) contra esa `clinic_id`.
 
 ### Ejecutar el servidor
@@ -128,10 +128,10 @@ ADD COLUMN IF NOT EXISTS razon_cita STRING;
 
 ### Derivación a especialista humano (WhatsApp Cloud)
 
-En `src/backend/data/clinics_mock.json`, por clínica:
+En `src/backend/data/clinics/<clinic_id>/site.json` y `policies.json`:
 
-- **`specialist_whatsapp`**: número del especialista en formato E.164 (ej. `+50371234567`) o solo dígitos; debe ser distinto del número del bot.
-- **`human_transfer_topic_keys`** (opcional): lista de claves para limitar qué temas activan la derivación; si se omite, se usan todos los definidos en `human_transfer_topics.py`.
+- **`specialist_whatsapp`** (en `site.json`): número del especialista en formato E.164 (ej. `+50371234567`) o solo dígitos; debe ser distinto del número del bot.
+- **`human_transfer_topic_keys`** (en `policies.json`, opcional): lista de claves para limitar qué temas activan la derivación; si es `null`, se usan todos los del catálogo por defecto en `human_transfer_topics.py`. Opcionalmente define **`transfer_topics_file`** para un catálogo JSON propio en la misma carpeta.
 
 El envío al especialista usa el mismo **`META_WHATSAPP_ACCESS_TOKEN`** y el **`whatsapp_phone_number_id`** de esa clínica (el número de negocio que ya envía al paciente).
 

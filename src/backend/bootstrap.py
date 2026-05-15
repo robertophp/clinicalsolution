@@ -39,7 +39,7 @@ from .services.human_transfer_service import (
     patient_prompt_transfer_not_configured,
     patient_prompt_unclear_confirmation,
 )
-from .services.human_transfer_topics import topics_for_clinic_keys
+from .services.human_transfer_topics import resolve_transfer_topics_for_clinic
 from .services.meta_whatsapp_service import (
     extract_incoming_whatsapp_events,
     send_text_message,
@@ -56,7 +56,8 @@ from .domain.citas_handlers import (
     _handle_reagendar_cita,
     set_conversation_memory_for_cita_handlers,
 )
-from .domain.clinics_config import build_whatsapp_phone_number_id_map, load_clinics_config
+from .domain.clinic_loader import CLINIC_POLICIES_BY_ID, load_clinic_tree
+from .domain.clinics_config import build_whatsapp_phone_number_id_map
 from .domain.clinics_state import init_clinics_by_id
 from .domain.disponibilidad import (
     _handle_consultar_disponibilidad,
@@ -80,12 +81,12 @@ logging.basicConfig(
 
 
 BASE_DIR = Path(__file__).resolve().parent
-CLINICS_FILE = BASE_DIR / "data" / "clinics_mock.json"
+CLINICS_ROOT = BASE_DIR / "data" / "clinics"
 
 try:
-    CLINICS_BY_ID = load_clinics_config(CLINICS_FILE)
+    CLINICS_BY_ID = load_clinic_tree(CLINICS_ROOT)
 except Exception as exc:  # noqa: BLE001
-    raise RuntimeError("Error cargando la configuración de clínicas.") from exc
+    raise RuntimeError("Error cargando la configuración de clínicas desde data/clinics/.") from exc
 
 init_clinics_by_id(CLINICS_BY_ID)
 
@@ -348,7 +349,10 @@ def _generate_and_persist_reply(
     if clinic_cfg:
         spec_digits = parse_specialist_whatsapp_recipient(getattr(clinic_cfg, "specialist_whatsapp", None))
         if spec_digits:
-            topics = topics_for_clinic_keys(getattr(clinic_cfg, "human_transfer_topic_keys", None))
+            topics = resolve_transfer_topics_for_clinic(
+                clinic_id,
+                getattr(clinic_cfg, "human_transfer_topic_keys", None),
+            )
             detection = detect_human_transfer_need(
                 gemini_service,
                 message=body,
@@ -408,6 +412,7 @@ def _generate_and_persist_reply(
         stored_first_name=stored_first_name,
         stored_full_name=stored_full_name_for_prompt,
         clinics_by_id=CLINICS_BY_ID,
+        policies=CLINIC_POLICIES_BY_ID.get(clinic_id),
     )
 
     chat_history = _build_chat_history_with_memory(clinic_id, from_number, body)

@@ -6,7 +6,7 @@ Este proyecto puede recibir mensajes de **WhatsApp Business** vía **Meta** en `
 
 1. **App** en [Meta for Developers](https://developers.facebook.com) con producto **WhatsApp**.
 2. **WABA ID** (WhatsApp Business Account): referencia del negocio (no es el mismo que el Phone Number ID).
-3. **Phone number ID**: aparece en **WhatsApp → API Setup**; es el ID que debes copiar a `whatsapp_phone_number_id` de la clínica en [`src/backend/data/clinics_mock.json`](../src/backend/data/clinics_mock.json). Sin este campo, el webhook no sabe qué clínica es.
+3. **Phone number ID**: aparece en **WhatsApp → API Setup**; es el ID que debes copiar a `whatsapp_phone_number_id` en [`src/backend/data/clinics/<clinic_id>/site.json`](../src/backend/data/clinics/demo_clinic_1/site.json) (o la carpeta de tu clínica). Sin este campo, el webhook no sabe qué clínica es.
 4. **Access token** de la app (temporal para pruebas o de larga duración en producción): va en `.env` como `META_WHATSAPP_ACCESS_TOKEN`.
 5. **App Secret**: va en `.env` como `META_APP_SECRET` (no lo subas a git).
 6. **Verify token**: string que inventas tú; el mismo valor en `.env` (`META_WEBHOOK_VERIFY_TOKEN`) y en la configuración del webhook en Meta.
@@ -35,7 +35,7 @@ Meta hará un **GET** a esa URL para verificar; el backend responde con el `hub.
 
 ## Configurar la clínica 1
 
-En `clinics_mock.json`, en `demo_clinic_1`, pon:
+En `data/clinics/demo_clinic_1/site.json`, pon:
 
 ```json
 "whatsapp_phone_number_id": "TU_PHONE_NUMBER_ID_DESDE_META"

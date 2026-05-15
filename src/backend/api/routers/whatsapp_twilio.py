@@ -26,7 +26,7 @@ async def whatsapp_webhook(
     Webhook principal de WhatsApp (Twilio).
 
     - Identifica la clínica mediante ?clinic_id=xxx.
-    - Lee la configuración de la clínica desde data/clinics_mock.json.
+    - Lee la configuración de la clínica desde ``data/clinics/<clinic_id>/`` (brand, site, policies).
     - Orquesta la llamada a Gemini y devuelve TwiML.
     - Solo adjuntos sin texto: plantilla fija (sin Gemini ni Firestore).
     """

@@ -18,7 +18,7 @@ def load_clinics_config(path: Path) -> Dict[str, ClinicConfig]:
         raw = path.read_text(encoding="utf-8")
         data = json.loads(raw)
     except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError("No se pudo leer o parsear 'clinics_mock.json'.") from exc
+        raise RuntimeError("No se pudo leer o parsear el archivo JSON de clínicas.") from exc
 
     clinics_raw: List[Dict[str, Any]] = data.get("clinics", [])
     clinics: Dict[str, ClinicConfig] = {}
@@ -30,7 +30,7 @@ def load_clinics_config(path: Path) -> Dict[str, ClinicConfig]:
         clinics[cfg.id] = cfg
 
     if not clinics:
-        raise RuntimeError("No se encontraron clínicas configuradas en 'clinics_mock.json'.")
+        raise RuntimeError("No se encontraron clínicas configuradas en el archivo JSON.")
 
     return clinics
 

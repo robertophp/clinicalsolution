@@ -1,0 +1,6 @@
+{
+  "clinic_id": "demo_clinic_2",
+  "human_transfer_topic_keys": ["quejas"],
+  "transfer_topics_file": null,
+  "booking": {}
+}

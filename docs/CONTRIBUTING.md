@@ -17,5 +17,5 @@ Varios tests importan módulos que cargan `backend.database` (motor BigQuery). S
 ## Convenciones
 
 - No commitear secretos (`key.json`, `.env`, tokens).
-- Cambios de comportamiento del asistente: revisar `conversation_prompt.py` y, si aplica, las descripciones de tools en `gemini_service.py`.
+- Cambios de comportamiento del asistente: revisar `domain/conversation_prompt.py`, las plantillas en `templates/prompt/`, los datos en `data/clinics/` (ver [CLINIC_DATA.md](CLINIC_DATA.md)) y, si aplica, las descripciones de tools en `gemini_service.py`.
 - Mantener mensajes al paciente en el idioma correcto (ES/EN) según el flujo existente.
