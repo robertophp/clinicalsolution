@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from pydantic import ValidationError
 
 from ..schemas.clinic import ClinicConfig
+from .runtime_env import clinic_whatsapp_phone_number_ids
 
 
 def load_clinics_config(path: Path) -> Dict[str, ClinicConfig]:
@@ -36,10 +37,18 @@ def load_clinics_config(path: Path) -> Dict[str, ClinicConfig]:
 
 
 def build_whatsapp_phone_number_id_map(clinics: Dict[str, ClinicConfig]) -> Dict[str, str]:
-    """Mapea Meta `phone_number_id` → `clinic_id` (solo clínicas con whatsapp_phone_number_id en JSON)."""
+    """
+    Mapea Meta ``phone_number_id`` → ``clinic_id``.
+
+    Registra ``whatsapp_phone_number_id`` (producción) y ``whatsapp_phone_number_id_dev``
+    (prueba) para enrutar STG y PROD sin cambiar ramas de git.
+    """
     m: Dict[str, str] = {}
     for cid, cfg in clinics.items():
-        pid = getattr(cfg, "whatsapp_phone_number_id", None)
-        if pid and str(pid).strip():
-            m[str(pid).strip()] = cid
+        for pid in clinic_whatsapp_phone_number_ids(cfg):
+            if pid in m and m[pid] != cid:
+                raise RuntimeError(
+                    f"phone_number_id duplicado {pid!r}: clínicas {m[pid]!r} y {cid!r}"
+                )
+            m[pid] = cid
     return m

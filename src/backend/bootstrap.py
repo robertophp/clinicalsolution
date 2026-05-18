@@ -58,6 +58,7 @@ from .domain.citas_handlers import (
 )
 from .domain.clinic_loader import CLINIC_POLICIES_BY_ID, load_clinic_tree
 from .domain.clinics_config import build_whatsapp_phone_number_id_map
+from .domain.runtime_env import resolve_whatsapp_phone_number_id_for_outbound
 from .domain.clinics_state import init_clinics_by_id
 from .domain.disponibilidad import (
     _handle_consultar_disponibilidad,
@@ -217,7 +218,9 @@ def _generate_and_persist_reply(
                 getattr(clinic_cfg, "specialist_whatsapp", None) if clinic_cfg else None
             )
             token = (settings.META_WHATSAPP_ACCESS_TOKEN or "").strip()
-            phone_nid = (getattr(clinic_cfg, "whatsapp_phone_number_id", None) or "").strip() if clinic_cfg else ""
+            phone_nid = resolve_whatsapp_phone_number_id_for_outbound(
+                clinic_cfg, app_env=settings.APP_ENV
+            )
 
             stored_full_name_tr = (metadata.get("patient_name") or "").strip() if isinstance(metadata, dict) else ""
             patient_name_tr = stored_full_name_tr or (stored_first_name or "").strip() or "Paciente"

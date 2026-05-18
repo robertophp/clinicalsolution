@@ -1,16 +1,36 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from ..config import settings
+from ..domain.runtime_env import (
+    effective_bigquery_dataset,
+    effective_firestore_database_id,
+)
 from .routers import chat, health, jobs, whatsapp_meta, whatsapp_twilio
 from .startup_checks import validate_production_settings
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     validate_production_settings()
+    logger.info(
+        "Runtime: APP_ENV=%s BigQuery dataset=%s Firestore database=%s",
+        settings.APP_ENV,
+        effective_bigquery_dataset(
+            app_env=settings.APP_ENV,
+            configured=settings.BIGQUERY_DATASET,
+        ),
+        effective_firestore_database_id(
+            app_env=settings.APP_ENV,
+            configured=settings.FIRESTORE_DATABASE_ID,
+        ),
+    )
     yield
 
 

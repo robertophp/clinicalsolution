@@ -20,10 +20,12 @@ class Settings(BaseSettings):
     CONVERSATION_TTL_MINUTES: int = 30  # Messages older than this are not used as context (inactivity)
     CONVERSATION_MAX_HISTORY: int = 5   # Max messages to send to Gemini as context
     CONVERSATION_MAX_STORED: int = 20   # Max messages to keep per user per clinic (trim older)
-    # Si creaste una base de datos Firestore con nombre (ej. "agentmemory"), pon su ID aquí. Si usas la base por defecto, déjalo vacío.
+    # Firestore: si no está en el entorno del proceso, se elige por APP_ENV
+    # (development → agentmemory, production → agentmemory-prod). Ver domain/runtime_env.py.
     FIRESTORE_DATABASE_ID: Optional[str] = None
 
-    # BigQuery: dataset donde está la tabla citas (ej. clinica_datos.citas)
+    # BigQuery: dataset de la tabla citas. Si no está en el entorno, se elige por APP_ENV
+    # (development → clinica_datos, production → clinica_datos_prod).
     BIGQUERY_DATASET: str = "clinica_datos"
 
     # Cloud Scheduler (u otro job): POST /jobs/sync-calendar-to-bigquery?token=...

@@ -61,6 +61,10 @@ TWILIO_AUTH=token_o_secret_de_twilio_opcional
 # Entorno: en production se valida configuración Meta y obligatoriedad de INTERNAL_API_KEY.
 # APP_ENV=development
 
+# BigQuery y Firestore (opcional en local; en Cloud Run se pueden omitir y se eligen por APP_ENV)
+# BIGQUERY_DATASET=clinica_datos
+# FIRESTORE_DATABASE_ID=agentmemory
+
 # API key para POST /chat y GET /health/gcp, /health/meta (Bearer o X-API-Key). En producción es obligatoria.
 # INTERNAL_API_KEY=genera_un_valor_largo_aleatorio
 
@@ -73,6 +77,86 @@ TWILIO_AUTH=token_o_secret_de_twilio_opcional
 # GEMINI_GENERATE_TIMEOUT_SECONDS=60
 # GEMINI_MAX_GENERATION_ATTEMPTS=3
 ```
+
+### Entornos STG y PROD (datos y WhatsApp)
+
+El mismo código sirve para staging y producción. **No copies IDs de WhatsApp entre ramas de git**: en cada `site.json` van los dos campos:
+
+| Campo en `site.json` | Uso |
+|----------------------|-----|
+| `whatsapp_phone_number_id` | Número oficial (PROD, `APP_ENV=production`) |
+| `whatsapp_phone_number_id_dev` | Número de prueba Meta (STG / local, `APP_ENV=development`) |
+
+El webhook enruta por el `phone_number_id` que Meta envía en cada mensaje; ambos IDs pueden apuntar a la misma `clinic_id`.
+
+**BigQuery** (tabla siempre `citas`):
+
+| Entorno | Dataset por defecto |
+|---------|---------------------|
+| STG / desarrollo | `clinica_datos` |
+| PROD | `clinica_datos_prod` |
+
+**Firestore**:
+
+| Entorno | Base por defecto |
+|---------|------------------|
+| STG / desarrollo | `agentmemory` |
+| PROD | `agentmemory-prod` |
+
+Si defines `BIGQUERY_DATASET` o `FIRESTORE_DATABASE_ID` en las variables del servicio Cloud Run, esos valores tienen prioridad. La lógica está en `domain/runtime_env.py`.
+
+### Despliegue en Cloud Run (Docker)
+
+La imagen **no** incluye `.env`. Configura secretos y variables en el servicio Run (o en GitHub Actions al desplegar).
+
+#### Checklist STG (`clinicalsolution-stg`)
+
+1. **Artifact Registry**: repositorio Docker `clinicalsolution` en tu región.
+2. **GitHub Actions secrets** (Settings → Secrets and variables → Actions), sin Secret Manager por ahora:
+
+   | Secret | Obligatorio |
+   |--------|-------------|
+   | `GCP_PROJECT_ID` | Sí |
+   | `GCP_REGION` | Sí |
+   | `GCP_SA_KEY` | Sí (JSON SA para build/deploy) |
+   | `META_WHATSAPP_ACCESS_TOKEN` | Sí |
+   | `META_APP_SECRET` | Sí |
+   | `META_WEBHOOK_VERIFY_TOKEN` | Sí |
+   | `GCP_RUN_SERVICE_ACCOUNT` | Recomendado (email SA de Run: Vertex, BQ, Firestore) |
+   | `INTERNAL_API_KEY` | No en STG (`APP_ENV=development`; `/chat` abierto si falta) |
+
+3. Push a la rama **`dev`** → workflow `.github/workflows/deploy-stg.yml` crea/actualiza el servicio y la imagen.
+4. El workflow fija: `APP_ENV=development`, `BIGQUERY_DATASET=clinica_datos`, `FIRESTORE_DATABASE_ID=agentmemory`.
+
+#### Primer deploy manual (opcional)
+
+```bash
+gcloud auth configure-docker us-central1-docker.pkg.dev
+docker build -t us-central1-docker.pkg.dev/PROJECT_ID/clinicalsolution/api:local .
+docker push us-central1-docker.pkg.dev/PROJECT_ID/clinicalsolution/api:local
+gcloud run deploy clinicalsolution-stg \
+  --image=us-central1-docker.pkg.dev/PROJECT_ID/clinicalsolution/api:local \
+  --region=us-central1 \
+  --service-account=TU_SA_RUN@PROJECT_ID.iam.gserviceaccount.com \
+  --set-env-vars="APP_ENV=development,PROJECT_ID=PROJECT_ID,LOCATION=us-central1,BIGQUERY_DATASET=clinica_datos,FIRESTORE_DATABASE_ID=agentmemory,META_WHATSAPP_ACCESS_TOKEN=...,META_APP_SECRET=...,META_WEBHOOK_VERIFY_TOKEN=..."
+```
+
+#### Webhook Meta en STG
+
+En [Meta for Developers](https://developers.facebook.com) → tu app → WhatsApp → **Configuration** → **Callback URL**:
+
+`https://TU-URL-DE-CLOUD-RUN-STG/webhooks/whatsapp`
+
+Mientras esa URL sea la del servicio **STG**:
+
+- Los mensajes al **número de prueba** (`whatsapp_phone_number_id_dev`) llegan a STG y usan BigQuery/Firestore de desarrollo.
+- El **número oficial** solo debe usar la URL del servicio **PROD** cuando estés listo; si el webhook sigue apuntando a STG, los clientes reales hablarían con el entorno de prueba.
+
+Para no afectar clientes: webhook de prod → servicio prod; pruebas solo escribiendo al número de test con webhook en STG (o ngrok en local). Ver [`docs/WHATSAPP_META.md`](docs/WHATSAPP_META.md).
+
+#### PROD (cuando corresponda)
+
+Servicio separado (ej. `clinicalsolution-prod`), rama `main`, `APP_ENV=production`, datasets por defecto `clinica_datos_prod` y `agentmemory-prod`, webhook Meta apuntando a la URL prod.
 
 ### Endpoint `/chat` y diagnósticos
 
@@ -91,7 +175,7 @@ Con **`APP_ENV=production`** (o `prod`), al arrancar la app se exige `INTERNAL_A
 
 1. Crea `src/backend/data/clinics/<nuevo_id>/` con `brand.json`, `site.json` y `policies.json` (detalle en [docs/CLINIC_DATA.md](docs/CLINIC_DATA.md)).
 2. Añade o filtra entradas en `src/backend/data/services_catalog.json` (`clinic_id` de la clínica o `"*"` para compartidos).
-3. Verifica el mapeo de `whatsapp_phone_number_id` → clínica (`domain/clinic_loader.py` + `build_whatsapp_phone_number_id_map`).
+3. En `site.json`, define `whatsapp_phone_number_id` (prod) y `whatsapp_phone_number_id_dev` (prueba). Verifica el mapa en `GET /health/meta`.
 4. Prueba un mensaje de WhatsApp (o `/chat`) contra esa `clinic_id`.
 
 ### Ejecutar el servidor
@@ -115,7 +199,9 @@ Meta puede enviar el mismo mensaje varias veces. El backend deduplica por **`wam
 
 ### BigQuery: tabla de citas
 
-La tabla `clinica_datos.citas` debe tener (además de las columnas que ya uses) la columna **`razon_cita`** (STRING, nullable) y **`status`** (STRING). Valores de `status`:
+En **STG** las citas van a ``clinica_datos.citas``; en **PROD** a ``clinica_datos_prod.citas`` (mismo esquema de columnas).
+
+La tabla `clinica_datos.citas` (y la copia en prod) debe tener (además de las columnas que ya uses) la columna **`razon_cita`** (STRING, nullable) y **`status`** (STRING). Valores de `status`:
 
 - **activa**: cita en pie (valor por defecto al crear una cita nueva).
 - **cancelada**: el cliente canceló la cita.

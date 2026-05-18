@@ -14,6 +14,7 @@ from google.cloud import firestore
 from google.cloud.exceptions import Conflict
 
 from ..config import settings
+from ..domain.runtime_env import effective_firestore_database_id
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,10 @@ class ConversationMemoryService:
     @property
     def _db(self) -> firestore.Client:
         if self._client is None:
-            database_id = getattr(settings, "FIRESTORE_DATABASE_ID", None) or "(default)"
+            database_id = effective_firestore_database_id(
+                app_env=settings.APP_ENV,
+                configured=getattr(settings, "FIRESTORE_DATABASE_ID", None),
+            )
             self._client = firestore.Client(project=self._project_id, database=database_id)
         return self._client
 

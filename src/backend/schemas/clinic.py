@@ -30,6 +30,8 @@ class ClinicConfig(BaseModel):
     rutas_transporte_publico: str | None = None
     # WhatsApp Cloud API (Meta): ID del número en Graph API (no es el WABA ni el teléfono legible).
     whatsapp_phone_number_id: str | None = None
+    # Mismo negocio, número de prueba Meta (STG / APP_ENV distinto de production).
+    whatsapp_phone_number_id_dev: str | None = None
     # Número WhatsApp del especialista humano para derivaciones (E.164 o solo dígitos). Opcional por clínica.
     specialist_whatsapp: str | None = None
     # Si se define, solo esas claves de ``human_transfer_topics`` aplican; si es null se usan todas las por defecto.

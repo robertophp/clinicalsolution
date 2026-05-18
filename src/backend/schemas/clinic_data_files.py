@@ -29,5 +29,6 @@ class ClinicSiteFile(BaseModel):
     indicaciones_parqueo: str | None = None
     rutas_transporte_publico: str | None = None
     whatsapp_phone_number_id: str | None = None
+    whatsapp_phone_number_id_dev: str | None = None
     specialist_whatsapp: str | None = None
     payment_methods: list[PaymentMethodLine] | None = None

@@ -9,6 +9,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy_bigquery import TIMESTAMP
 
 from .config import settings
+from .domain.runtime_env import effective_bigquery_dataset
 
 
 class Base(DeclarativeBase):
@@ -17,11 +18,11 @@ class Base(DeclarativeBase):
 
 def _create_engine() -> Engine:
     """Create a SQLAlchemy engine for BigQuery."""
-    dataset = getattr(settings, "BIGQUERY_DATASET", None)
-    if dataset:
-        database_url = f"bigquery://{settings.PROJECT_ID}/{dataset}"
-    else:
-        database_url = f"bigquery://{settings.PROJECT_ID}"
+    dataset = effective_bigquery_dataset(
+        app_env=settings.APP_ENV,
+        configured=getattr(settings, "BIGQUERY_DATASET", None),
+    )
+    database_url = f"bigquery://{settings.PROJECT_ID}/{dataset}"
     return create_engine(database_url)
 
 

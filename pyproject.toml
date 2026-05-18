@@ -36,4 +36,4 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-backend = ["templates/prompt/*.j2"]
+backend = ["templates/prompt/*.j2", "data/**/*.json"]
