@@ -1,0 +1,42 @@
+{
+  "clinic_id": "demo_clinic_1",
+  "opening_hours": {
+    "mon_fri": {
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "from": "08:00",
+      "to": "17:00"
+    },
+    "sat": {
+      "days": ["sat"],
+      "from": "08:00",
+      "to": "14:00"
+    }
+  },
+  "allowed_intents": ["cita", "servicios", "clinica_info", "seguimiento_cita", "small_talk"],
+  "calendar_id": "dra.stephaniepalacios@clinicadentaltusonrisa.com",
+  "calendar_sync_enabled": true,
+  "google_maps_link": "https://maps.app.goo.gl/AkAsZgzfy1ZgUwnbA",
+  "indicaciones_parqueo": "Contamos con parqueo privado frente a la clínica",
+  "rutas_transporte_publico": "7C, 22, 52, 4T, 101D, 45AB, 38C",
+  "whatsapp_phone_number_id": "1098116840045683",
+  "whatsapp_phone_number_id_dev": "1135563346296793",
+  "specialist_whatsapp": "+50374351282",
+  "payment_methods": [
+    {
+      "es": "Efectivo en clínica.",
+      "en": "Cash at the clinic."
+    },
+    {
+      "es": "Transferencia bancaria (datos de cuenta al confirmar la cita o en recepción).",
+      "en": "Bank transfer (account details when confirming the appointment or at reception)."
+    },
+    {
+      "es": "Tarjetas de débito y crédito.",
+      "en": "Debit and credit cards."
+    },
+    {
+      "es": "Tasa/comisión 0 % al pagar a plazos con tarjeta: solo con Banco Agrícola y Banco Davivienda; con otros bancos no hay esa opción a plazos con tasa 0 (política vigente de la clínica).",
+      "en": "0 % fee when paying in installments by card: only with Banco Agrícola and Banco Davivienda; other banks do not get that 0 % installment option (per clinic policy)."
+    }
+  ]
+}

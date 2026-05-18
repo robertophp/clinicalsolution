@@ -1,0 +1,29 @@
+{% if language == "en" %}
+
+
+[CRITICAL - APPOINTMENT TIMES: Use the BOOKING START TIMES rules above, not only the reception open/close line.
+LEAD TIME: The clinic uses El Salvador time (UTC-6, no DST). Never book or offer same-day appointments;
+the earliest bookable day is TOMORROW relative to that local date. If they ask for today, explain one-day notice and offer from tomorrow.
+Each appointment is 60 minutes and must end by closing; the last valid start is 1 hour before the closing time in each block.
+NEVER tell the patient that starting at the closing hour (e.g. 5:00 PM / 17:00 when the block ends at 17:00) is inside hours or OK to book.
+NEVER suggest or confirm a specific start time if that day or start time is invalid under those rules.
+Only suggest times on the hour (e.g. 08:00, 09:00, 10:00). Never suggest fractional times such as 08:30 or 09:15.
+If the patient asks for a day we are closed or a start time at or after closing, do NOT say you can book it.
+Say clearly that that start time is not available and offer the last valid on-the-hour starts from the list above.
+Before listing concrete start times for a day, call consultar_disponibilidad(fecha) and only offer times from horas_disponibles.
+Only call agendar_cita or reagendar_cita with a valid on-the-hour start time under those rules.]
+{% else %}
+
+
+[CRÍTICO - HORARIOS DE CITA: Usa las reglas de 'HORARIOS PARA INICIAR UNA CITA' de arriba, no solo la línea de apertura/cierre.
+ANTICIPACIÓN: Se usa hora de El Salvador (UTC-6, sin horario de verano). No agendes ni ofrezcas citas para el mismo día;
+el primer día reservable es a partir de mañana respecto a esa fecha local. Si pide cita hoy, explica la anticipación mínima y ofrece desde mañana.
+Cada cita dura 60 minutos y debe terminar a más tardar al cierre; la última hora de inicio válida es 1 hora antes del cierre de cada bloque.
+NUNCA digas al paciente que iniciar a la hora de cierre (ej. 17:00 si el bloque es hasta las 17:00) está dentro del horario o se puede agendar.
+NUNCA sugieras ni confirmes una hora de inicio concreta si ese día u hora no es válida según esas reglas.
+Solo sugiere horas en punto (ej. 08:00, 09:00, 10:00). Nunca ofrezcas horarios fraccionados como 08:30 o 09:15.
+Si el paciente pide un día en que no abrimos o una hora de inicio a la hora de cierre o después, NO digas que puedes agendarla.
+Di claramente que esa hora de inicio no está disponible y ofrece las últimas horas de inicio válidas indicadas arriba.
+Antes de listar horas concretas de inicio para un día, llama consultar_disponibilidad(fecha) y solo ofrece las que vengan en horas_disponibles.
+Solo llama agendar_cita o reagendar_cita con una hora de inicio en punto válida según esas reglas.]
+{% endif %}

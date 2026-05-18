@@ -1,0 +1,103 @@
+# Despliega el servicio Cloud Run de staging al hacer push a la rama `dev`.
+#
+# Secrets en GitHub → Settings → Secrets and variables → Actions:
+#   Obligatorios:
+#     GCP_PROJECT_ID
+#     GCP_REGION              (ej. us-central1)
+#     GCP_SA_KEY              JSON de cuenta de servicio (deploy: Run Admin, AR Writer, SA User)
+#     META_WHATSAPP_ACCESS_TOKEN
+#     META_APP_SECRET
+#     META_WEBHOOK_VERIFY_TOKEN
+#   Recomendado:
+#     GCP_RUN_SERVICE_ACCOUNT  email de la SA que ejecuta Cloud Run (Vertex, BQ, Firestore)
+#   Opcional (STG):
+#     INTERNAL_API_KEY         si no existe, /chat queda sin API key (válido con APP_ENV=development)
+
+name: Deploy STG (Cloud Run)
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+env:
+  AR_REPOSITORY: clinicalsolution
+  CLOUD_RUN_SERVICE: clinicalsolution-stg
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        env:
+          REGION: ${{ secrets.GCP_REGION }}
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push image
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ secrets.GCP_REGION }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${{ env.AR_REPOSITORY }}/api:${IMAGE_TAG}"
+          docker build -t "${IMAGE}" .
+          docker push "${IMAGE}"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+
+      - name: Deploy to Cloud Run (STG)
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ secrets.GCP_REGION }}
+          META_WHATSAPP_ACCESS_TOKEN: ${{ secrets.META_WHATSAPP_ACCESS_TOKEN }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+          GCP_RUN_SERVICE_ACCOUNT: ${{ secrets.GCP_RUN_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          ENV_VARS="APP_ENV=development"
+          ENV_VARS="${ENV_VARS},PROJECT_ID=${PROJECT_ID}"
+          ENV_VARS="${ENV_VARS},LOCATION=${REGION}"
+          ENV_VARS="${ENV_VARS},BIGQUERY_DATASET=clinica_datos"
+          ENV_VARS="${ENV_VARS},FIRESTORE_DATABASE_ID=agentmemory"
+          ENV_VARS="${ENV_VARS},META_WEBHOOK_SKIP_SIGNATURE_VERIFY=false"
+          ENV_VARS="${ENV_VARS},META_WHATSAPP_ACCESS_TOKEN=${META_WHATSAPP_ACCESS_TOKEN}"
+          ENV_VARS="${ENV_VARS},META_APP_SECRET=${META_APP_SECRET}"
+          ENV_VARS="${ENV_VARS},META_WEBHOOK_VERIFY_TOKEN=${META_WEBHOOK_VERIFY_TOKEN}"
+          if [ -n "${INTERNAL_API_KEY}" ]; then
+            ENV_VARS="${ENV_VARS},INTERNAL_API_KEY=${INTERNAL_API_KEY}"
+          fi
+
+          DEPLOY=(gcloud run deploy "${CLOUD_RUN_SERVICE}"
+            --project="${PROJECT_ID}"
+            --region="${REGION}"
+            --image="${IMAGE}"
+            --platform=managed
+            --allow-unauthenticated
+            --port=8080
+            --memory=1Gi
+            --timeout=300
+            --min-instances=0
+            --max-instances=3
+            --set-env-vars="${ENV_VARS}")
+
+          if [ -n "${GCP_RUN_SERVICE_ACCOUNT}" ]; then
+            DEPLOY+=(--service-account="${GCP_RUN_SERVICE_ACCOUNT}")
+          fi
+
+          "${DEPLOY[@]}"
