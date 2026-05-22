@@ -18,6 +18,7 @@ from ...services.meta_whatsapp_service import (
     extract_incoming_whatsapp_events,
     send_text_message,
     verify_webhook_signature,
+    webhook_has_user_messages,
 )
 from ...services.whatsapp_media_replies import reply_for_meta_media_type
 
@@ -64,6 +65,9 @@ async def meta_whatsapp_webhook(request: Request) -> Response:
         data = json.loads(raw.decode("utf-8")) if raw else {}
     except (UnicodeDecodeError, json.JSONDecodeError):
         return Response(status_code=400)
+
+    if not webhook_has_user_messages(data):
+        return Response(status_code=200)
 
     events = extract_incoming_whatsapp_events(data)
     if not events:
@@ -125,6 +129,14 @@ async def meta_whatsapp_webhook(request: Request) -> Response:
 
             lang = _resolve_whatsapp_reply_language(clinic_id, from_number)
             reply_text = reply_for_meta_media_type(meta_type=ev.media_type, lang=lang)
+
+        if not (reply_text or "").strip():
+            logging.warning(
+                "Meta webhook: respuesta vacía; no se envía mensaje proactivo (wamid=%s from=%s)",
+                ev.wamid,
+                ev.wa_from,
+            )
+            continue
 
         try:
             await send_text_message(

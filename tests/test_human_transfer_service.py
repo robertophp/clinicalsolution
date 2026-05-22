@@ -83,6 +83,28 @@ def test_classify_patient_summary_approve_heuristic_en():
     )
 
 
+def test_classify_patient_summary_decline_heuristic_es():
+    gemini = object()
+    assert (
+        classify_patient_summary_response(
+            gemini,
+            patient_message="no",
+            language="es",
+            current_summary="Resumen de prueba.",
+        )
+        == "decline"
+    )
+    assert (
+        classify_patient_summary_response(
+            gemini,
+            patient_message="no quiero",
+            language="es",
+            current_summary="Resumen de prueba.",
+        )
+        == "decline"
+    )
+
+
 def test_transfer_summary_reference_block_es_has_anchor_and_rules():
     b = _reference_context_block_for_transfer_summary(language="es")
     assert "REFERENCIA" in b

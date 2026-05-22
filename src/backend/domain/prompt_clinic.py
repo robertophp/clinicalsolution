@@ -176,27 +176,47 @@ def _format_opening_hours_for_prompt(clinic: ClinicConfig, language: str) -> str
     return "\n".join(lines)
 
 
+def _format_clinic_phone_for_prompt(clinic: ClinicConfig, language: str) -> str:
+    """Teléfono de contacto de la clínica (no confundir con el WhatsApp del bot ni el del especialista)."""
+    phone = (getattr(clinic, "clinic_phone", None) or "").strip()
+    if not phone:
+        return ""
+    if language == "en":
+        return (
+            f"\n\n[CLINIC PHONE – use ONLY if they ask for the clinic phone, call us, landline, or how to reach reception: "
+            f"{phone}. Do not invent other numbers.]"
+        )
+    return (
+        f"\n\n[TELÉFONO DE LA CLÍNICA – úsalo SOLO si preguntan el teléfono de la clínica, llamar, fijo o recepción: "
+        f"{phone}. No inventes otros números.]"
+    )
+
+
 def _format_clinic_location_for_prompt(clinic: ClinicConfig, language: str) -> str:
     """
-    Enlace a Maps, parqueo y transporte: el modelo solo debe usar cada dato según la pregunta.
-    - Ubicación / dirección / dónde están: solo el enlace de Google Maps (nada más de este bloque).
+    Dirección física, enlace a Maps, parqueo y transporte: el modelo solo debe usar cada dato según la pregunta.
+    - Ubicación / dirección: texto de dirección + enlace Maps en el mismo mensaje.
     - Parqueo: solo si el usuario pregunta explícitamente por parqueo/estacionamiento/aparcamiento.
     - Transporte público: solo si pregunta por autobuses/rutas/transporte público/cómo llegar en bus.
     """
+    address = (getattr(clinic, "clinic_address", None) or "").strip()
     maps = (getattr(clinic, "google_maps_link", None) or "").strip()
     parking = (getattr(clinic, "indicaciones_parqueo", None) or "").strip()
     transit = (getattr(clinic, "rutas_transporte_publico", None) or "").strip()
-    if not maps and not parking and not transit:
+    if not address and not maps and not parking and not transit:
         return ""
 
     if language == "en":
         lines: list[str] = ["\n\n[CLINIC LOCATION – follow these rules strictly:]"]
-        if maps:
-            lines.append(f"- Google Maps link (use ONLY for location/address/where the clinic is): {maps}")
+        if address or maps:
+            lines.append("- Physical address + map (when they ask location/address/where you are):")
+            if address:
+                lines.append(f"  Address text (include in your reply): {address}")
+            if maps:
+                lines.append(f"  Google Maps link (same reply, after the address): {maps}")
             lines.append(
-                "  If the patient asks where the clinic is, the address, location, or how to find you on the map, "
-                "reply with ONLY this link and a very short line (e.g. 'Here is the location:'). "
-                "Do NOT add parking or public transport details in that same reply unless they also asked for them."
+                "  Reply in ONE message, e.g. 'Here is the location:' then the address text, then the link. "
+                "Do NOT add parking or public transport unless they also asked."
             )
         if parking:
             lines.append(f"- Parking (ONLY if they explicitly ask about parking): {parking}")
@@ -210,12 +230,15 @@ def _format_clinic_location_for_prompt(clinic: ClinicConfig, language: str) -> s
         )
     else:
         lines = ["\n\n[UBICACIÓN – sigue estas reglas al pie de la letra:]"]
-        if maps:
-            lines.append(f"- Enlace a Google Maps (solo para ubicación/dirección/dónde queda la clínica): {maps}")
+        if address or maps:
+            lines.append("- Dirección física + mapa (si preguntan dónde están / dirección / ubicación):")
+            if address:
+                lines.append(f"  Texto de dirección (inclúyelo en la respuesta): {address}")
+            if maps:
+                lines.append(f"  Enlace Google Maps (en el mismo mensaje, después de la dirección): {maps}")
             lines.append(
-                "  Si el paciente pregunta dónde está la clínica, la dirección, ubicación o cómo encontrarlos en el mapa, "
-                "responde ÚNICAMENTE con este enlace y una frase muy breve (ej. 'Aquí está la ubicación:'). "
-                "No añadas en esa misma respuesta información de parqueo ni de transporte público, salvo que también lo pregunte."
+                "  Responde en UN solo mensaje, por ejemplo: 'Te comparto la ubicación:' luego el texto de la dirección, "
+                "luego el enlace. No añadas parqueo ni transporte en esa misma respuesta salvo que también lo pregunte."
             )
         if parking:
             lines.append(f"- Parqueo (SOLO si pregunta explícitamente por parqueo, estacionamiento o aparcamiento): {parking}")
@@ -314,10 +337,29 @@ def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language
             "Service prices are in the SERVICES CATALOG embedded in the assistant instructions; "
             "routine price questions are not escalation unless there is a billing dispute or harsh complaint."
         )
+        chunks.append(
+            "requires_human_transfer=false when: price ask for a catalog service; dental pain plus review/evaluation "
+            "price — respond with catalog price, empathy, recommend evaluation booking, do NOT escalate."
+        )
+        chunks.append(
+            "requires_human_transfer=true only if: service not in catalog; patient insists on special quote after "
+            "evaluation was offered; serious complaint; fiscal topics; subspecialty beyond catalog."
+        )
     else:
         chunks.append(
             "Los precios de servicios están en el CATÁLOGO del prompt del asistente; "
             "preguntas rutinarias de precio no son derivación salvo conflicto de cobro o reclamo fuerte."
+        )
+        chunks.append(
+            "requires_human_transfer=false cuando: preguntan precio de un servicio que está en catálogo; "
+            "mencionan dolor dental y preguntan por revisión/evaluación/consulta o por un servicio con is_evaluation; "
+            "combinan dolor + precio de evaluación/revisión — el asistente debe dar precio referencial, empatía, "
+            "recomendar cita de evaluación y ofrecer agendar, NO derivar."
+        )
+        chunks.append(
+            "requires_human_transfer=true solo si: el servicio NO está en catálogo; el paciente insiste en cotización "
+            "especial o escalamiento tras ya haber recibido precio y oferta de evaluación; queja grave; temas fiscales; "
+            "especialidad fuera de alcance del catálogo."
         )
     return "\n\n".join(chunks) if chunks else ""
 
@@ -343,12 +385,13 @@ def _format_urgency_dolor_prompt_block(language: str) -> str:
             "omit `suffix_urgencia` for ordinary bookings.\n"
         )
     return (
-        "\n\n[DOLOR / URGENCIA – **Usa este bloque solo si el paciente ya describió** dolor dental fuerte, inflamación, "
-        "o mucho dolor después de un tratamiento o visita reciente en la clínica. NO lo apliques a pedidos genéricos de cita (solo día/hora) "
-        "ni a saludos: ahí sigue el flujo normal y hay que elegir servicio del catálogo con claridad—nunca uses `evaluacion` por defecto sin contexto de dolor "
-        "y nunca agendes evaluación sin que el paciente confirme que quiere una evaluación.]\n"
-        "- Responde con empatía breve y tranquilidad: el equipo de la clínica está capacitado para ayudarle.\n"
-        "- Prioriza ofrecer una **evaluación**: usa el id de catálogo `evaluacion` salvo que deje claro que quiere otro servicio; entonces sigue el flujo normal.\n"
+        "\n\n[DOLOR / URGENCIA – Complemento al CATÁLOGO (catálogo y precios van primero). "
+        "**Usa este bloque solo si el paciente ya describió** dolor dental, molestia o pregunta por revisión/consulta con dolor. "
+        "NO lo apliques a pedidos genéricos de cita (solo día/hora) ni a saludos.]\n"
+        "- Primero responde con empatía y, si preguntó precio de evaluación/revisión, usa el precio del catálogo (servicios evaluación=sí) "
+        "y recomienda agendar evaluación para que la doctora dé un precio exacto.\n"
+        "- Si solo reporta dolor sin precio, ofrece cita de evaluación (id del catálogo con evaluación=sí, p. ej. `evaluacion`).\n"
+        "- No derives a humano por este escenario si el servicio está en catálogo.\n"
         "- Llama `consultar_primer_dia_disponible` (max_dias opcional 1–30, por defecto 14) para obtener el **primer día con huecos** desde mañana "
         "(salta días cerrados o sin horas libres).\n"
         "- Ofrece primero solo las horas de `primeras_tres_horas` (máximo tres inicios HH:00), salvo que pida más opciones.\n"

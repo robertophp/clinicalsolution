@@ -26,6 +26,8 @@ class ClinicSiteFile(BaseModel):
     calendar_id: str | None = None
     calendar_sync_enabled: bool = False
     google_maps_link: str | None = None
+    clinic_address: str | None = None
+    clinic_phone: str | None = None
     indicaciones_parqueo: str | None = None
     rutas_transporte_publico: str | None = None
     whatsapp_phone_number_id: str | None = None

@@ -111,10 +111,12 @@ def send_text_message_sync(
             }
             resp = client.post(url, json=payload, headers=headers)
             if resp.status_code >= 400:
-                logger.warning(
-                    "Graph API error sending WhatsApp message (sync): %s %s",
+                logger.error(
+                    "Graph API error sending WhatsApp message (sync): status=%s to=%s phone_number_id=%s body=%s",
                     resp.status_code,
-                    resp.text[:500],
+                    to_wa_id,
+                    phone_number_id,
+                    resp.text[:800],
                 )
             resp.raise_for_status()
 
@@ -129,6 +131,18 @@ class MetaWhatsappIncoming:
     wamid: str
     text_body: str = ""
     media_type: str = ""
+
+
+def webhook_has_user_messages(data: dict[str, Any]) -> bool:
+    """True si el payload trae al menos un mensaje entrante del usuario (no solo statuses)."""
+    if data.get("object") != "whatsapp_business_account":
+        return False
+    for entry in data.get("entry") or []:
+        for change in entry.get("changes") or []:
+            value = change.get("value") or {}
+            if value.get("messages"):
+                return True
+    return False
 
 
 def extract_incoming_whatsapp_events(data: dict[str, Any]) -> list[MetaWhatsappIncoming]:

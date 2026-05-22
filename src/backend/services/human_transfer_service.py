@@ -15,7 +15,7 @@ from .human_transfer_topics import TransferTopicDefinition, format_topics_for_pr
 
 logger = logging.getLogger(__name__)
 
-PatientSummaryIntent = Literal["approve", "revise", "unclear"]
+PatientSummaryIntent = Literal["approve", "revise", "decline", "unclear"]
 
 _ES_WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 _ES_MONTHS = (
@@ -229,6 +229,9 @@ def detect_human_transfer_need(
             "- First-contact questions about payment options (cards, installments, 0% fee, which banks), "
             "price comparisons, or 'it seems expensive' seeking alternatives — if the assistant's "
             "standard catalog + payment policy (see context block when provided) can answer.\n"
+            "- Dental pain and/or asking price for check-up, evaluation, review, or a catalog service "
+            "(especially is_evaluation): assistant should give catalog price, empathy, recommend evaluation "
+            "appointment — do NOT escalate.\n"
             "POLICY — requires_human_transfer=true:\n"
             "- Escalation-worthy complaints: billing errors after clarification, refusal/manager demands, "
             "severe service incidents, repeated unresolved conflict in thread, topics clearly outside bot policy.\n\n"
@@ -249,6 +252,8 @@ def detect_human_transfer_need(
             "- Primera consulta sobre medios de pago (tarjeta, cuotas, tasa 0, qué bancos), comparación de precios "
             "o «me parece caro» pidiendo opciones, cuando el asistente puede responder con el catálogo y la política "
             "de pagos de la clínica (ver bloque de contexto si viene incluido).\n"
+            "- Dolor dental y/o pregunta de precio por revisión, evaluación, consulta o servicio del catálogo "
+            "(sobre todo is_evaluation): el asistente debe dar precio, empatía y ofrecer cita de evaluación — NO derivar.\n"
             "POLÍTICA — requires_human_transfer=true:\n"
             "- Quejas graves o conflicto: cobro percibido como incorrecto tras aclarar, exigencia de responsable, "
             "mal servicio/atención muy serio, conflicto repetido sin resolver en el hilo, situación que claramente "
@@ -430,8 +435,9 @@ def classify_patient_summary_response(
             "Classify the patient's reply as exactly one label:\n"
             "- approve: they confirm it's OK to send (yes, ok, go ahead, send it).\n"
             "- revise: they say it's wrong, incomplete, or want to add details.\n"
+            "- decline: they refuse escalation (no, I don't want, not now, prefer to continue here).\n"
             "- unclear: ambiguous or off-topic.\n"
-            "Answer with ONLY one word: approve, revise, or unclear."
+            "Answer with ONLY one word: approve, revise, decline, or unclear."
         )
     else:
         instructions = (
@@ -440,8 +446,9 @@ def classify_patient_summary_response(
             "Clasifica la respuesta del paciente en UNA etiqueta:\n"
             "- approve: confirma que está bien para enviar al especialista (sí, ok, envíalo, correcto).\n"
             "- revise: dice que no cuadra, falta algo o quiere agregar/cambiar datos.\n"
+            "- decline: rechaza derivación (no, no quiero, mejor no, prefiero seguir aquí, no gracias).\n"
             "- unclear: ambigua o fuera de tema.\n"
-            "Responde SOLO una palabra: approve, revise o unclear."
+            "Responde SOLO una palabra: approve, revise, decline o unclear."
         )
 
     try:
@@ -457,6 +464,8 @@ def classify_patient_summary_response(
 
     if "approve" in raw:
         return "approve"
+    if "decline" in raw:
+        return "decline"
     if "revise" in raw:
         return "revise"
     if "unclear" in raw:
@@ -471,7 +480,11 @@ def _fallback_summary_feedback(message: str, language: str) -> PatientSummaryInt
     if lang.startswith("en"):
         if re.fullmatch(r"(yes|yeah|yep|ok|okay|sure|send it|go ahead|correct|fine)\.?", m):
             return "approve"
-        if re.fullmatch(r"(no|nope|wrong|incorrect|add more|change it)\.?", m):
+        if re.fullmatch(
+            r"(no|nope|not now|don't want|do not want|prefer not|no thanks|never mind)\.?", m
+        ):
+            return "decline"
+        if re.fullmatch(r"(wrong|incorrect|add more|change it)\.?", m):
             return "revise"
         return None
 
@@ -480,8 +493,16 @@ def _fallback_summary_feedback(message: str, language: str) -> PatientSummaryInt
         m,
     ):
         return "approve"
+    if re.search(
+        r"\b(no quiero|no deseo|mejor no|prefiero no|no gracias|no, gracias|sin derivar|no derivar|"
+        r"no hace falta|no es necesario|cancelar derivación|cancela la derivación)\b",
+        m,
+    ):
+        return "decline"
     if re.match(r"^(agrega|añade|corrige|falta|incorpora|actualiza|mejor|complementa)\b", m):
         return "revise"
+    if re.fullmatch(r"no\.?", m):
+        return "decline"
     return None
 
 
@@ -499,6 +520,18 @@ def patient_prompt_confirm_summary(summary: str, language: str) -> str:
         "Para agilizar tu atención, le compartiré a nuestro especialista un resumen de lo que nos cuentas:\n\n"
         f"{s}\n\n"
         "¿Te parece bien o deseas agregar algo más? 👉"
+    )
+
+
+def patient_prompt_decline_transfer(language: str) -> str:
+    if (language or "").strip().lower().startswith("en"):
+        return (
+            "That's perfectly fine 🙂 I'll stay here with you. "
+            "Tell me how else I can help — prices, appointments, or any other question."
+        )
+    return (
+        "Está bien, con gusto te sigo apoyando por aquí 🙂 "
+        "Cuéntame en qué más puedo ayudarte: precios, citas u otra duda."
     )
 
 
@@ -561,6 +594,7 @@ __all__ = [
     "parse_specialist_whatsapp_recipient",
     "sanitize_specialist_summary_body",
     "patient_prompt_after_transfer",
+    "patient_prompt_decline_transfer",
     "patient_prompt_confirm_summary",
     "patient_prompt_transfer_not_configured",
     "patient_prompt_transfer_send_failed",

@@ -62,8 +62,10 @@ def clinic_whatsapp_phone_number_ids(cfg: ClinicConfig) -> tuple[str, ...]:
 
 def resolve_whatsapp_phone_number_id_for_outbound(cfg: ClinicConfig | None, *, app_env: str | None) -> str:
     """
-    Phone Number ID para enviar por Graph API cuando no viene en el evento entrante
-    (p. ej. notificación al especialista). En no-producción prioriza el ID de prueba.
+    Phone Number ID para enviar por Graph API cuando no viene en el evento entrante.
+    En no-producción prioriza el ID de prueba (conversación con pacientes en demo/STG).
+
+    No usar para derivación al especialista; ver ``resolve_whatsapp_phone_number_id_for_specialist``.
     """
     if not cfg:
         return ""
@@ -72,3 +74,14 @@ def resolve_whatsapp_phone_number_id_for_outbound(cfg: ClinicConfig | None, *, a
     if is_production_app_env(app_env):
         return prod
     return dev or prod
+
+
+def resolve_whatsapp_phone_number_id_for_specialist(cfg: ClinicConfig | None) -> str:
+    """
+    Phone Number ID de la línea clínica (prod) para notificar al ``specialist_whatsapp``.
+
+    Siempre ``whatsapp_phone_number_id``; nunca ``whatsapp_phone_number_id_dev`` (solo demo paciente).
+    """
+    if not cfg:
+        return ""
+    return (getattr(cfg, "whatsapp_phone_number_id", None) or "").strip()
