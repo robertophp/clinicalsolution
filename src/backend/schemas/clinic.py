@@ -26,6 +26,8 @@ class ClinicConfig(BaseModel):
     calendar_sync_enabled: bool = False
     # Ubicación y cómo llegar (opcional por clínica).
     google_maps_link: str | None = None
+    clinic_address: str | None = None
+    clinic_phone: str | None = None
     indicaciones_parqueo: str | None = None
     rutas_transporte_publico: str | None = None
     # WhatsApp Cloud API (Meta): ID del número en Graph API (no es el WABA ni el teléfono legible).

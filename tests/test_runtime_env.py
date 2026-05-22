@@ -12,6 +12,7 @@ from backend.domain.runtime_env import (
     effective_firestore_database_id,
     is_production_app_env,
     resolve_whatsapp_phone_number_id_for_outbound,
+    resolve_whatsapp_phone_number_id_for_specialist,
 )
 from backend.schemas.clinic import ClinicConfig
 
@@ -48,3 +49,14 @@ def test_resolve_whatsapp_outbound_dev_vs_prod():
     )
     assert resolve_whatsapp_phone_number_id_for_outbound(cfg, app_env="development") == "dev_id"
     assert resolve_whatsapp_phone_number_id_for_outbound(cfg, app_env="production") == "prod_id"
+
+
+def test_resolve_whatsapp_specialist_always_prod():
+    cfg = ClinicConfig(
+        id="c1",
+        name="Test",
+        system_prompt="x",
+        whatsapp_phone_number_id="prod_id",
+        whatsapp_phone_number_id_dev="dev_id",
+    )
+    assert resolve_whatsapp_phone_number_id_for_specialist(cfg) == "prod_id"

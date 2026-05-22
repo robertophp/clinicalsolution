@@ -35,6 +35,7 @@ from .services.human_transfer_service import (
     parse_specialist_whatsapp_recipient,
     patient_prompt_after_transfer,
     patient_prompt_confirm_summary,
+    patient_prompt_decline_transfer,
     patient_prompt_transfer_send_failed,
     patient_prompt_transfer_not_configured,
     patient_prompt_unclear_confirmation,
@@ -58,7 +59,7 @@ from .domain.citas_handlers import (
 )
 from .domain.clinic_loader import CLINIC_POLICIES_BY_ID, load_clinic_tree
 from .domain.clinics_config import build_whatsapp_phone_number_id_map
-from .domain.runtime_env import resolve_whatsapp_phone_number_id_for_outbound
+from .domain.runtime_env import resolve_whatsapp_phone_number_id_for_specialist
 from .domain.clinics_state import init_clinics_by_id
 from .domain.disponibilidad import (
     _handle_consultar_disponibilidad,
@@ -206,6 +207,7 @@ def _generate_and_persist_reply(
     # --- Derivación a especialista: confirmación del resumen (antes de guardrails de dominio) ---
     human_phase = (metadata.get("human_transfer_phase") or "none") if isinstance(metadata, dict) else "none"
     stored_transfer_summary = (metadata.get("human_transfer_summary") or "").strip() if isinstance(metadata, dict) else ""
+    skip_transfer_detection = False
     if human_phase == "awaiting_summary" and stored_transfer_summary:
         decision = classify_patient_summary_response(
             gemini_service,
@@ -218,9 +220,7 @@ def _generate_and_persist_reply(
                 getattr(clinic_cfg, "specialist_whatsapp", None) if clinic_cfg else None
             )
             token = (settings.META_WHATSAPP_ACCESS_TOKEN or "").strip()
-            phone_nid = resolve_whatsapp_phone_number_id_for_outbound(
-                clinic_cfg, app_env=settings.APP_ENV
-            )
+            phone_nid = resolve_whatsapp_phone_number_id_for_specialist(clinic_cfg)
 
             stored_full_name_tr = (metadata.get("patient_name") or "").strip() if isinstance(metadata, dict) else ""
             patient_name_tr = stored_full_name_tr or (stored_first_name or "").strip() or "Paciente"
@@ -241,8 +241,27 @@ def _generate_and_persist_reply(
                         access_token=token,
                     )
                     sent_ok = True
+                    logging.info(
+                        "Derivación enviada al especialista clinic=%s to=%s phone_number_id=%s",
+                        clinic_id,
+                        specialist_digits,
+                        phone_nid,
+                    )
                 except Exception:
-                    logging.exception("Error enviando derivación al especialista por WhatsApp")
+                    logging.exception(
+                        "Error enviando derivación al especialista por WhatsApp "
+                        "(clinic=%s to=%s phone_number_id=%s)",
+                        clinic_id,
+                        specialist_digits,
+                        phone_nid,
+                    )
+            else:
+                logging.warning(
+                    "Derivación no enviada: specialist=%s token=%s phone_nid=%s",
+                    bool(specialist_digits),
+                    bool(token),
+                    bool(phone_nid),
+                )
 
             conversation_memory.add_message(clinic_id, from_number, "user", body)
             if sent_ok:
@@ -311,6 +330,17 @@ def _generate_and_persist_reply(
             conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
             return reply_text
 
+        if decision == "decline":
+            try:
+                conversation_memory.clear_human_transfer(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar estado human_transfer tras rechazo", exc_info=True)
+            skip_transfer_detection = True
+            reply_text = patient_prompt_decline_transfer(language)
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
         reply_text = patient_prompt_unclear_confirmation(language)
         conversation_memory.add_message(clinic_id, from_number, "user", body)
         conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
@@ -349,7 +379,7 @@ def _generate_and_persist_reply(
         return reply_text
 
     # --- Derivación a especialista: detección de tema sensible (solo si hay número de especialista) ---
-    if clinic_cfg:
+    if clinic_cfg and not skip_transfer_detection:
         spec_digits = parse_specialist_whatsapp_recipient(getattr(clinic_cfg, "specialist_whatsapp", None))
         if spec_digits:
             topics = resolve_transfer_topics_for_clinic(

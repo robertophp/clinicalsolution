@@ -25,17 +25,25 @@ except Exception:  # noqa: BLE001
     _SERVICES_RAW = []
 
 
+def evaluation_services_for_clinic(clinic_id: str) -> List[Dict[str, Any]]:
+    """Servicios del catálogo marcados con ``is_evaluation`` (consulta/evaluación previa)."""
+    return [s for s in _services_for_clinic(clinic_id) if s.get("is_evaluation") is True]
+
+
 def _format_services_catalog_for_prompt(services: List[Dict[str, Any]], language: str) -> str:
     """Formatea el catálogo de servicios para inyectarlo en el system prompt (ES/EN)."""
     if not services:
         return ""
+    eval_services = [s for s in services if s.get("is_evaluation") is True]
     lines = [
-        "\n\n[CATÁLOGO DE SERVICIOS – Usa el 'id' cuando agendes una cita o cuando el usuario pregunte por precios.]",
-        "Servicios disponibles (id | nombre | precio | estado):",
+        "\n\n[CATÁLOGO DE SERVICIOS – Prioridad: responde precios y citas con este catálogo ANTES de escalar a humano.]",
+        "Servicios disponibles (id | nombre | precio | evaluación | estado):",
     ]
     if language == "en":
-        lines[0] = "\n\n[SERVICES CATALOG – Use the 'id' when booking an appointment or when the user asks for prices.]"
-        lines[1] = "Available services (id | name | price | status):"
+        lines[0] = (
+            "\n\n[SERVICES CATALOG – Priority: answer prices and booking from this catalog BEFORE escalating to a human.]"
+        )
+        lines[1] = "Available services (id | name | price | evaluation | status):"
     for s in services:
         sid = s.get("id", "")
         name = s.get("name_en", s.get("name", "")) if language == "en" else s.get("name", s.get("name_en", ""))
@@ -43,10 +51,41 @@ def _format_services_catalog_for_prompt(services: List[Dict[str, Any]], language
         currency = s.get("currency", "USD")
         status = s.get("status", "available")
         status_label = "available" if status == "available" else status
-        lines.append(f"  - id: {sid} | {name} | {currency} {price} | {status_label}")
-    lines.append("Si el usuario pregunta cuánto cuesta algo o por precios, responde con estos datos. Si no indica el tipo de cita al agendar, pregúntale antes de usar la herramienta.")
+        eval_flag = "sí" if s.get("is_evaluation") else "no"
+        if language == "en":
+            eval_flag = "yes" if s.get("is_evaluation") else "no"
+        lines.append(f"  - id: {sid} | {name} | {currency} {price} | evaluación={eval_flag} | {status_label}")
     if language == "en":
-        lines[-1] = "If the user asks how much something costs or for prices, answer using this list. If they don't specify the type of appointment when booking, ask before calling the tool."
+        lines.append(
+            "If the user asks for a price or a service in this list, give the listed price with empathy. "
+            "For services marked evaluation=yes, add that the listed price is a reference and the best next step "
+            "is to book an evaluation appointment so the doctor can give an exact quote after assessing them. "
+            "Invite them to schedule that evaluation (use the evaluation service id) when appropriate. "
+            "If they mention pain or ask for a check-up/review without a specific non-evaluation service, "
+            "prioritize offering an evaluation appointment from the evaluation=yes rows. "
+            "Do NOT escalate to a human for routine price + pain questions when the service is in this catalog."
+        )
+    else:
+        lines.append(
+            "Si el usuario pregunta precio o un servicio de esta lista, indica el precio del catálogo con empatía. "
+            "En servicios con evaluación=sí, aclara que ese precio es referencial y lo recomendable es agendar "
+            "una cita de evaluación para que la doctora valore el caso y dé un precio exacto. "
+            "Invita a agendar esa evaluación (usa el id del servicio) cuando corresponda. "
+            "Si menciona dolor o pide revisión/consulta sin un servicio concreto no evaluación, prioriza ofrecer "
+            "cita de evaluación (filas evaluación=sí). "
+            "NO derives a humano por preguntas rutinarias de precio + dolor si el servicio está en catálogo."
+        )
+    if eval_services:
+        eval_ids = ", ".join((s.get("id") or "") for s in eval_services[:12])
+        if language == "en":
+            lines.append(f"Evaluation service ids (prefer for pain / check-up): {eval_ids}")
+        else:
+            lines.append(f"Ids de evaluación (priorizar ante dolor / revisión): {eval_ids}")
+    lines.append(
+        "Si no indica el tipo de cita al agendar, pregúntale antes de usar la herramienta."
+        if language != "en"
+        else "If they don't specify the appointment type when booking, ask before calling the tool."
+    )
     return "\n".join(lines)
 
 

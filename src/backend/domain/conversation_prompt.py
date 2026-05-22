@@ -18,6 +18,7 @@ from ..schemas.clinic_policies import BookingPromptPolicies, ClinicPolicies
 from .catalog import _format_services_catalog_for_prompt, _services_for_clinic
 from .prompt_clinic import (
     _format_clinic_location_for_prompt,
+    _format_clinic_phone_for_prompt,
     _format_opening_hours_for_prompt,
     _format_payment_methods_for_prompt,
     _format_urgency_dolor_prompt_block,
@@ -173,6 +174,10 @@ def build_conversation_system_prompt(
         if location_text:
             system_prompt_effective = system_prompt_effective + location_text
 
+        phone_text = _format_clinic_phone_for_prompt(clinic_cfg, language)
+        if phone_text:
+            system_prompt_effective = system_prompt_effective + phone_text
+
         payment_text = _format_payment_methods_for_prompt(clinic_cfg, language)
         if payment_text:
             system_prompt_effective = system_prompt_effective + payment_text
@@ -181,6 +186,7 @@ def build_conversation_system_prompt(
     if catalog_text:
         system_prompt_effective = system_prompt_effective + catalog_text
 
-    system_prompt_effective = system_prompt_effective + _format_urgency_dolor_prompt_block(language)
+    # Catálogo antes del bloque de dolor/urgencia (prioridad citas y precios).
     system_prompt_effective = system_prompt_effective.strip() + build_citas_tool_instruction(language, policies)
+    system_prompt_effective = system_prompt_effective + _format_urgency_dolor_prompt_block(language)
     return system_prompt_effective

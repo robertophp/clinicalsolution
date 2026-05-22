@@ -10,7 +10,8 @@
       "aliases": [
         "evaluación, limpieza y radiografía panorámica"
       ],
-      "clinic_id": "demo_clinic_1"
+      "clinic_id": "demo_clinic_1",
+      "is_evaluation": true
     },
     {
       "id": "evaluacion",
@@ -22,7 +23,8 @@
       "aliases": [
         "evaluacion"
       ],
-      "clinic_id": "demo_clinic_1"
+      "clinic_id": "demo_clinic_1",
+      "is_evaluation": true
     },
     {
       "id": "gingivectomia_completa",
@@ -82,7 +84,8 @@
       "aliases": [
         "evaluacion + limpieza"
       ],
-      "clinic_id": "demo_clinic_1"
+      "clinic_id": "demo_clinic_1",
+      "is_evaluation": true
     },
     {
       "id": "evaluacion_radiografia_panoramica",
@@ -94,7 +97,8 @@
       "aliases": [
         "evaluacion + radiografia panoramica"
       ],
-      "clinic_id": "demo_clinic_1"
+      "clinic_id": "demo_clinic_1",
+      "is_evaluation": true
     },
     {
       "id": "endodoncia_pieza",
@@ -1270,7 +1274,8 @@
       "aliases": [
         "evaluacion con especialista maxilofacial"
       ],
-      "clinic_id": "demo_clinic_1"
+      "clinic_id": "demo_clinic_1",
+      "is_evaluation": true
     },
     {
       "id": "evaluacion_dental",
@@ -1282,7 +1287,8 @@
       "aliases": [
         "evaluación dental"
       ],
-      "clinic_id": "demo_clinic_1"
+      "clinic_id": "demo_clinic_1",
+      "is_evaluation": true
     },
     {
       "id": "protesis_valplast_unilateral",
@@ -1342,7 +1348,8 @@
       "aliases": [
         "evaluación con ortodoncista"
       ],
-      "clinic_id": "demo_clinic_1"
+      "clinic_id": "demo_clinic_1",
+      "is_evaluation": true
     },
     {
       "id": "alisado_radicular_por_pieza",
@@ -1594,7 +1601,8 @@
       "aliases": [
         "evaluacion con especialista en endodoncia"
       ],
-      "clinic_id": "demo_clinic_1"
+      "clinic_id": "demo_clinic_1",
+      "is_evaluation": true
     },
     {
       "id": "endodoncia_reconstruccion_con_fibra_de_vidrio_pieza",
