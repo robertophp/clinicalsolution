@@ -55,12 +55,14 @@ DEFAULT_TRANSFER_TOPICS: tuple[TransferTopicDefinition, ...] = (
         description_es=(
             "Casos médicos dentales complejos o graves: enfermedades sistemicas relevantes, "
             "comorbilidades, medicación que condiciona tratamiento, situaciones de alto riesgo "
-            "o síntomas muy severos que el bot no debe resolver solo."
+            "que el bot no debe resolver solo. NO incluyas aquí pedidos rutinarios de cita urgente, "
+            "dolor agudo o «¿me atienden hoy?» — esos van al flujo de evaluación/urgencia del asistente."
         ),
         description_en=(
             "Complex or severe dental/medical situations: serious systemic disease, "
-            "comorbidities, medications affecting treatment, high-risk contexts, "
-            "or very severe symptoms that should not be handled by the bot alone."
+            "comorbidities, medications affecting treatment, high-risk contexts "
+            "the bot should not handle alone. Do NOT include routine urgent booking, "
+            "acute pain, or 'can you see me today' — those use the assistant urgency flow."
         ),
     ),
     TransferTopicDefinition(

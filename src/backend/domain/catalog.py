@@ -60,7 +60,7 @@ def _format_services_catalog_for_prompt(services: List[Dict[str, Any]], language
             "If the user asks for a price or a service in this list, give the listed price with empathy. "
             "For services marked evaluation=yes, add that the listed price is a reference and the best next step "
             "is to book an evaluation appointment so the doctor can give an exact quote after assessing them. "
-            "Invite them to schedule that evaluation (use the evaluation service id) when appropriate. "
+            "Invite them to schedule that evaluation by name when appropriate. "
             "If they mention pain or ask for a check-up/review without a specific non-evaluation service, "
             "prioritize offering an evaluation appointment from the evaluation=yes rows. "
             "Do NOT escalate to a human for routine price + pain questions when the service is in this catalog."
@@ -70,7 +70,7 @@ def _format_services_catalog_for_prompt(services: List[Dict[str, Any]], language
             "Si el usuario pregunta precio o un servicio de esta lista, indica el precio del catálogo con empatía. "
             "En servicios con evaluación=sí, aclara que ese precio es referencial y lo recomendable es agendar "
             "una cita de evaluación para que la doctora valore el caso y dé un precio exacto. "
-            "Invita a agendar esa evaluación (usa el id del servicio) cuando corresponda. "
+            "Invita a agendar esa evaluación por su nombre cuando corresponda. "
             "Si menciona dolor o pide revisión/consulta sin un servicio concreto no evaluación, prioriza ofrecer "
             "cita de evaluación (filas evaluación=sí). "
             "NO derives a humano por preguntas rutinarias de precio + dolor si el servicio está en catálogo."
@@ -78,14 +78,32 @@ def _format_services_catalog_for_prompt(services: List[Dict[str, Any]], language
     if eval_services:
         eval_ids = ", ".join((s.get("id") or "") for s in eval_services[:12])
         if language == "en":
-            lines.append(f"Evaluation service ids (prefer for pain / check-up): {eval_ids}")
+            lines.append(
+                f"Evaluation service ids for agendar_cita only (pain / check-up; never show to patient): {eval_ids}"
+            )
         else:
-            lines.append(f"Ids de evaluación (priorizar ante dolor / revisión): {eval_ids}")
-    lines.append(
-        "Si no indica el tipo de cita al agendar, pregúntale antes de usar la herramienta."
-        if language != "en"
-        else "If they don't specify the appointment type when booking, ask before calling the tool."
-    )
+            lines.append(
+                f"Ids de evaluación solo para agendar_cita (dolor / revisión; nunca mostrar al paciente): {eval_ids}"
+            )
+    if language == "en":
+        lines.append(
+            "IMPORTANT: NEVER show the patient internal catalog IDs (e.g. evaluacion_dental, limpieza, evaluacion) "
+            "or formats like (id: ...) or 'id: ...'. Speak only using the readable service name (name column). "
+            "IDs are ONLY for function calling (servicio parameter in agendar_cita/reagendar_cita), never in chat."
+        )
+        lines.append(
+            "If they don't specify the appointment type when booking, ask before calling the tool."
+        )
+    else:
+        lines.append(
+            "IMPORTANTE: NUNCA muestres al paciente IDs internos del catálogo "
+            "(ej. evaluacion_dental, limpieza, evaluacion) ni formatos como (id: ...) o «id: ...». "
+            "Habla solo con el nombre legible del servicio (columna nombre). "
+            "Los IDs van ÚNICAMENTE en function calling (parámetro servicio de agendar_cita/reagendar_cita), nunca en el chat."
+        )
+        lines.append(
+            "Si no indica el tipo de cita al agendar, pregúntale antes de usar la herramienta."
+        )
     return "\n".join(lines)
 
 
