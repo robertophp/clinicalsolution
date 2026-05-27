@@ -70,6 +70,7 @@ from .domain.reply_booking_guard import claims_booking_saved_without_backend, fa
 from .domain.prompt_clinic import (
     _build_transfer_resolution_context,
 )
+from .domain.urgency_signals import message_signals_urgency
 from .domain.urgency_calendar import _calendar_suffix_label_for_cita
 from .domain.wa_normalization import _normalize_wa_id_for_storage
 
@@ -379,7 +380,14 @@ def _generate_and_persist_reply(
         return reply_text
 
     # --- Derivación a especialista: detección de tema sensible (solo si hay número de especialista) ---
-    if clinic_cfg and not skip_transfer_detection:
+    # Urgencia/dolor en este turno → flujo de citas (consultar_primer_dia_disponible), no derivación.
+    skip_transfer_for_urgency = message_signals_urgency(body)
+    if skip_transfer_for_urgency:
+        logging.info(
+            "Derivación omitida por señal de urgencia/dolor (clinic_id=%s)",
+            clinic_id,
+        )
+    if clinic_cfg and not skip_transfer_detection and not skip_transfer_for_urgency:
         spec_digits = parse_specialist_whatsapp_recipient(getattr(clinic_cfg, "specialist_whatsapp", None))
         if spec_digits:
             topics = resolve_transfer_topics_for_clinic(

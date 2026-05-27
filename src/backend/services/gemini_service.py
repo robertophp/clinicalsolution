@@ -134,7 +134,7 @@ AGENDAR_CITA_DECLARATION = FunctionDeclaration(
         "NO reutilices la hora de otra cita mencionada en el historial (ej. una revisión a las 08:00) para una cita nueva de otro servicio salvo que el usuario diga explícitamente que quiere la misma hora. "
         "Si solo confirmaste el día ('¿te parece bien ese día?' y responde sí) pero aún no hay hora concreta para esta reserva, NO llames esta función todavía: "
         "primero consultar_disponibilidad(fecha) y ofrece horas_disponibles, o pregunta «¿a qué hora?», y solo entonces llama agendar_cita con esa hora. "
-        "NO uses servicio=evaluacion si el paciente solo dio día/hora o nunca eligió servicio: pregunta qué id del catálogo quiere y, si sugieres evaluación, confirma que acepta evaluacion. "
+        "NO uses servicio=evaluacion si el paciente solo dio día/hora o nunca eligió servicio: pregunta qué tipo de cita o servicio quiere (por nombre, no verbalices ids del catálogo) y, si sugieres evaluación, confirma que acepta evaluacion. "
         "Usa evaluacion solo con dolor/urgencia ya descritos (bloque del sistema) o si pidió explícitamente evaluación y lo confirmó. "
         "Cuando ya resumiste en el chat la reserva completa (servicio, fecha y hora) y pediste confirmación explícita con **sí** o **confirmo** para guardar en el sistema, "
         "y el paciente responde con sí / ok / claro / listo / vale / confirmo / de acuerdo (aceptación clara), llama esta función en ese mismo turno con "
@@ -462,6 +462,11 @@ class GeminiService:
             "Nunca incluyas en tu respuesta al paciente código de programación, llamadas tipo print(...), "
             "default_api, ni nombres de funciones internas con paréntesis (agendar_cita, consultar_disponibilidad, listar_mis_citas_proximas, etc.). "
             "Para agendar o consultar horarios debes usar las herramientas del sistema (function calling), no texto que parezca código."
+        )
+        parts.append(
+            "NUNCA muestres al paciente IDs internos del catálogo de servicios (ej. evaluacion_dental, limpieza) "
+            "ni formatos como (id: ...) o «id: ...»; habla solo con el nombre legible del servicio. "
+            "Los IDs van únicamente en el parámetro servicio de agendar_cita/reagendar_cita (function calling), nunca en el chat."
         )
         return "\n".join(parts)
 

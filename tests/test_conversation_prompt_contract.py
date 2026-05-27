@@ -42,3 +42,8 @@ def test_system_prompt_contains_clinic_and_tools() -> None:
     assert cfg.name in text
     assert "consultar_disponibilidad" in text
     assert "HORARIOS PARA INICIAR" in text
+    assert "NUNCA muestres al paciente IDs internos del catálogo" in text
+    assert "nunca ids del catálogo" in text
+    assert "DOLOR / URGENCIA" in text
+    assert "consultar_primer_dia_disponible" in text
+    assert "no hay citas que inicien hoy" in text

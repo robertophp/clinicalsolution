@@ -342,6 +342,11 @@ def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language
             "price — respond with catalog price, empathy, recommend evaluation booking, do NOT escalate."
         )
         chunks.append(
+            "requires_human_transfer=false when: urgent/emergency/same-day request or dental pain — the assistant "
+            "must use consultar_primer_dia_disponible, explain same-day booking is not available, offer the first three "
+            "slots from tomorrow (primeras_tres_horas), and book evaluacion when appropriate; do NOT escalate."
+        )
+        chunks.append(
             "requires_human_transfer=true only if: service not in catalog; patient insists on special quote after "
             "evaluation was offered; serious complaint; fiscal topics; subspecialty beyond catalog."
         )
@@ -357,6 +362,11 @@ def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language
             "recomendar cita de evaluación y ofrecer agendar, NO derivar."
         )
         chunks.append(
+            "requires_human_transfer=false cuando: piden urgente, emergencia, cita hoy o reportan dolor — el asistente "
+            "debe usar consultar_primer_dia_disponible, explicar que no hay citas el mismo día, ofrecer las tres primeras "
+            "horas desde mañana (primeras_tres_horas) y agendar evaluacion si corresponde; NO derivar."
+        )
+        chunks.append(
             "requires_human_transfer=true solo si: el servicio NO está en catálogo; el paciente insiste en cotización "
             "especial o escalamiento tras ya haber recibido precio y oferta de evaluación; queja grave; temas fiscales; "
             "especialidad fuera de alcance del catálogo."
@@ -365,38 +375,37 @@ def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language
 
 
 def _format_urgency_dolor_prompt_block(language: str) -> str:
-    """Instrucciones para dolor/ inflamación / dolor posprocedimiento y uso de herramientas de urgencia."""
+    """Instrucciones para dolor/urgencia y uso de herramientas de primer día disponible."""
     if language == "en":
         return (
-            "\n\n[PAIN / URGENCY – **Only use this block when the patient has already mentioned** strong dental pain, swelling, "
-            "or severe pain after a recent treatment at the clinic. Do NOT apply it to generic booking requests (day/time only) "
-            "or small talk; those follow the normal flow and require an explicit catalog service choice—never default to `evaluacion` without pain context "
-            "and never book evaluacion without the patient agreeing to an evaluation.]\n"
-            "- Respond with brief empathy (they are being heard) and reassurance that the clinic team will take care of them.\n"
-            "- Prefer offering an evaluation appointment: use catalog service id `evaluacion` unless they clearly want a different service; "
-            "then follow the normal booking flow.\n"
-            "- Call `consultar_primer_dia_disponible` (optional max_dias 1–30, default 14) to find the **first calendar day from tomorrow** "
-            "with at least one free slot (skips closed days and fully booked days).\n"
-            "- Offer only the times in `primeras_tres_horas` first (up to three HH:00 starts), unless they ask for more options.\n"
-            "- Classification for `suffix_urgencia` when booking with `evaluacion`: "
-            "`dolor_post_cita` if pain seems linked to a procedure or visit they had at the clinic; "
-            "`dolor_intenso` if they report severe pain but do not tie it to a recent procedure.\n"
-            "- When calling `agendar_cita` for this flow, pass `servicio`=`evaluacion` and `suffix_urgencia` as above so the calendar title stays accurate; "
-            "omit `suffix_urgencia` for ordinary bookings.\n"
+            "\n\n[PAIN / URGENCY – Use when the patient mentions dental pain, swelling, **urgent/urgency**, "
+            "**emergency**, needs to be seen **today**, or similar. Do NOT use for generic booking (day/time only) "
+            "without pain/urgency cues, greetings, or small talk.]\n"
+            "- Respond with brief empathy and reassurance; the clinic team will help.\n"
+            "- **Same-day policy:** appointments cannot start today (El Salvador UTC-6); earliest is **tomorrow**. "
+            "If they ask for today, say so clearly with empathy before offering slots.\n"
+            "- Prefer an evaluation appointment: use catalog service id `evaluacion` unless they clearly want another service; "
+            "confirm they accept an evaluation before booking.\n"
+            "- Call `consultar_primer_dia_disponible` (max_dias 1–30, default 14) for the **first day from tomorrow** with a free slot.\n"
+            "- Offer only `primeras_tres_horas` first (up to three HH:00 starts) unless they ask for more.\n"
+            "- Do NOT escalate to a human specialist for routine urgent booking when evaluacion is in the catalog.\n"
+            "- `suffix_urgencia` with `evaluacion`: `dolor_post_cita` if linked to a recent procedure/visit; "
+            "`dolor_intenso` for severe pain/urgency without a recent procedure tie-in.\n"
+            "- In `agendar_cita` pass `servicio`=`evaluacion` and `suffix_urgencia` as above; omit `suffix_urgencia` for ordinary bookings.\n"
         )
     return (
-        "\n\n[DOLOR / URGENCIA – Complemento al CATÁLOGO (catálogo y precios van primero). "
-        "**Usa este bloque solo si el paciente ya describió** dolor dental, molestia o pregunta por revisión/consulta con dolor. "
-        "NO lo apliques a pedidos genéricos de cita (solo día/hora) ni a saludos.]\n"
-        "- Primero responde con empatía y, si preguntó precio de evaluación/revisión, usa el precio del catálogo (servicios evaluación=sí) "
-        "y recomienda agendar evaluación para que la doctora dé un precio exacto.\n"
-        "- Si solo reporta dolor sin precio, ofrece cita de evaluación (id del catálogo con evaluación=sí, p. ej. `evaluacion`).\n"
-        "- No derives a humano por este escenario si el servicio está en catálogo.\n"
-        "- Llama `consultar_primer_dia_disponible` (max_dias opcional 1–30, por defecto 14) para obtener el **primer día con huecos** desde mañana "
-        "(salta días cerrados o sin horas libres).\n"
-        "- Ofrece primero solo las horas de `primeras_tres_horas` (máximo tres inicios HH:00), salvo que pida más opciones.\n"
-        "- Clasificación para `suffix_urgencia` al agendar con `evaluacion`: "
-        "`dolor_post_cita` si el dolor parece ligado a un procedimiento o cita reciente en clínica; "
-        "`dolor_intenso` si describe dolor fuerte sin atarlo a un procedimiento reciente.\n"
-        "- En `agendar_cita` incluye `servicio`=`evaluacion` y `suffix_urgencia` según el caso para el título en agenda; en citas normales no envíes `suffix_urgencia`.\n"
+        "\n\n[DOLOR / URGENCIA – Úsalo cuando el paciente mencione dolor dental, molestia, inflamación, "
+        "**urgente/urgencia**, **emergencia**, quiera ser atendido **hoy** o similar. "
+        "NO lo uses en citas genéricas (solo día/hora sin urgencia), saludos ni charla.]\n"
+        "- Responde con empatía breve y tranquiliza: el equipo de la clínica le ayudará.\n"
+        "- **Política mismo día:** no hay citas que inicien hoy (hora El Salvador UTC-6); lo más pronto es **desde mañana**. "
+        "Si piden hoy, explícalo con empatía antes de ofrecer horarios.\n"
+        "- Prioriza cita de **evaluación**: usa el id de catálogo `evaluacion` (o el servicio evaluación=sí acordado) "
+        "salvo que elija otro servicio con claridad; confirma que acepta evaluación antes de agendar.\n"
+        "- No derives a humano por este escenario si la evaluación está en catálogo.\n"
+        "- Llama `consultar_primer_dia_disponible` (max_dias 1–30, por defecto 14) para el **primer día con huecos desde mañana**.\n"
+        "- Ofrece solo las horas de `primeras_tres_horas` (máximo tres HH:00) salvo que pida más.\n"
+        "- `suffix_urgencia` con `evaluacion`: `dolor_post_cita` si el dolor va ligado a procedimiento/cita reciente; "
+        "`dolor_intenso` si es dolor fuerte o urgencia sin atarlo a un procedimiento reciente.\n"
+        "- En `agendar_cita` incluye `servicio`=`evaluacion` y `suffix_urgencia` según el caso; en citas normales no envíes `suffix_urgencia`.\n"
     )
