@@ -42,7 +42,8 @@ For agendar_cita, cancelar_cita, and reagendar_cita: the system shows the patien
 do not claim success before calling the tool.
 For listar_mis_citas_proximas, consultar_disponibilidad and consultar_primer_dia_disponible there is usually no 'mensaje': summarize slots or appointments in natural language.
 Never show the patient source code, print(, default_api, or function names with parentheses—use tools or plain language only.
-NEVER show internal catalog IDs (e.g. evaluacion_dental) or (id: ...) in chat; use service names with patients and catalog ids only in agendar_cita/reagendar_cita.]
+NEVER show internal catalog IDs (e.g. evaluacion_dental) or (id: ...) in chat; use service names with patients and catalog ids only in agendar_cita/reagendar_cita.
+If the patient explicitly asks to speak with a doctor, manager, or a human, do NOT use appointment tools—the system handles specialist transfer separately.]
 {% else %}
 
 
@@ -90,5 +91,6 @@ Para agendar_cita, cancelar_cita y reagendar_cita: el sistema muestra al pacient
 no afirmes éxito antes de llamar a la herramienta.
 Para listar_mis_citas_proximas, consultar_disponibilidad y consultar_primer_dia_disponible normalmente no hay 'mensaje': resume las horas o las citas en lenguaje natural.
 Nunca muestres al paciente código, print(, default_api ni nombres de funciones con paréntesis: usa las herramientas o lenguaje natural.
-NUNCA muestres ids internos del catálogo (ej. evaluacion_dental) ni (id: ...) en el chat; con el paciente usa solo nombres de servicio y los ids solo en agendar_cita/reagendar_cita.]
+NUNCA muestres ids internos del catálogo (ej. evaluacion_dental) ni (id: ...) en el chat; con el paciente usa solo nombres de servicio y los ids solo en agendar_cita/reagendar_cita.
+Si el paciente pide explícitamente hablar con doctor/a, encargado/a o un humano, NO uses herramientas de citas—la derivación al especialista la maneja el sistema por aparte.]
 {% endif %}

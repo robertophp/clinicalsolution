@@ -24,6 +24,19 @@ _CLINIC_TRANSFER_TOPIC_OVERRIDES: dict[str, tuple[TransferTopicDefinition, ...]]
 
 DEFAULT_TRANSFER_TOPICS: tuple[TransferTopicDefinition, ...] = (
     TransferTopicDefinition(
+        key="contacto_humano",
+        description_es=(
+            "El paciente pide EXPLÍCITAMENTE hablar con un humano: doctor/a, encargado/a, responsable, "
+            "persona real, atención humana, etc. Derivar de inmediato; NO intentar agendar cita ni ofrecer horarios. "
+            "Incluye «quiero hablar con la doctora», «comuníquenme con un encargado»."
+        ),
+        description_en=(
+            "Patient EXPLICITLY asks to speak with a human: doctor, manager, supervisor, real person, etc. "
+            "Escalate immediately; do NOT try to book appointments or offer time slots. "
+            "Includes \"I want to speak with the doctor\", \"connect me with a manager\"."
+        ),
+    ),
+    TransferTopicDefinition(
         key="quejas",
         description_es=(
             "Quejas o reclamos fuertes (no preguntas informativas): mal servicio vivido, cobros que consideran "

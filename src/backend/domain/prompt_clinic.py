@@ -347,6 +347,10 @@ def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language
             "slots from tomorrow (primeras_tres_horas), and book evaluacion when appropriate; do NOT escalate."
         )
         chunks.append(
+            "requires_human_transfer=true (immediate): patient explicitly asks to speak with a doctor, manager, or human — "
+            "escalate via specialist transfer; do NOT offer appointment booking or availability tools."
+        )
+        chunks.append(
             "requires_human_transfer=true only if: service not in catalog; patient insists on special quote after "
             "evaluation was offered; serious complaint; fiscal topics; subspecialty beyond catalog."
         )
@@ -365,6 +369,10 @@ def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language
             "requires_human_transfer=false cuando: piden urgente, emergencia, cita hoy o reportan dolor — el asistente "
             "debe usar consultar_primer_dia_disponible, explicar que no hay citas el mismo día, ofrecer las tres primeras "
             "horas desde mañana (primeras_tres_horas) y agendar evaluacion si corresponde; NO derivar."
+        )
+        chunks.append(
+            "requires_human_transfer=true (inmediato): el paciente pide explícitamente hablar con doctor/a, encargado/a o "
+            "humano — derivar al especialista; NO ofrecer agendar cita ni consultar disponibilidad."
         )
         chunks.append(
             "requires_human_transfer=true solo si: el servicio NO está en catálogo; el paciente insiste en cotización "

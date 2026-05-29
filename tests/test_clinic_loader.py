@@ -21,6 +21,7 @@ def test_load_clinic_tree_demo_clinics(clinics_root: Path) -> None:
     assert clinics["demo_clinic_1"].name == "Clínica Dental Tu Sonrisa"
     assert clinics["demo_clinic_1"].whatsapp_phone_number_id == "1098116840045683"
     assert clinics["demo_clinic_1"].whatsapp_phone_number_id_dev == "1135563346296793"
+    assert clinics["demo_clinic_1"].max_appointments_per_slot == 5
     assert CLINIC_POLICIES_BY_ID["demo_clinic_1"].human_transfer_topic_keys is None
 
 

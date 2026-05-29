@@ -259,6 +259,17 @@ class CalendarService:
             return dt
         return (dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1))
 
+    @staticmethod
+    def _count_busy_overlaps(
+        slot_start: datetime,
+        slot_end: datetime,
+        busy: list[tuple[datetime, datetime]],
+    ) -> int:
+        """Cuenta intervalos ocupados que solapan [slot_start, slot_end)."""
+        return sum(
+            1 for b_start, b_end in busy if slot_start < b_end and slot_end > b_start
+        )
+
     def get_available_hourly_slots(
         self,
         *,
@@ -267,15 +278,18 @@ class CalendarService:
         opening_ranges: list[tuple[time_type, time_type]],
         slot_minutes: int = 60,
         use_calendar_busy: bool = True,
+        max_appointments_per_slot: int = 1,
     ) -> list[time_type]:
         """
         Devuelve horas de inicio disponibles en punto para slots de 60 minutos.
         Regla: el slot debe caber completo dentro del bloque (start+slot <= cierre).
 
-        Si ``use_calendar_busy`` es True y hay ``calendar_id``, descarta traslapes con
-        eventos reales de Google Calendar. Si es False, solo aplica el horario de la
-        clínica (útil cuando aún no hay integración con Calendar).
+        Si ``use_calendar_busy`` es True y hay ``calendar_id``, cuenta eventos de Google Calendar
+        que solapan cada hora; la hora queda disponible si el conteo es menor que
+        ``max_appointments_per_slot``. Si es False, solo aplica el horario de la clínica
+        (sin filtrar por Calendar; el cupo sin calendario se aplica en ``availability``).
         """
+        cap = max(1, int(max_appointments_per_slot or 1))
         if not opening_ranges:
             return []
         tz_sv = timezone(timedelta(hours=-6))
@@ -302,8 +316,8 @@ class CalendarService:
             cursor = self._ceil_to_next_hour(win_start)
             while cursor + slot_delta <= win_end:
                 slot_end = cursor + slot_delta
-                overlaps = any((cursor < b_end and slot_end > b_start) for b_start, b_end in busy)
-                if not overlaps:
+                overlap_count = self._count_busy_overlaps(cursor, slot_end, busy)
+                if overlap_count < cap:
                     available.append(cursor.timetz().replace(tzinfo=None))
                 cursor += timedelta(hours=1)
         return available

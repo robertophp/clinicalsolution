@@ -128,6 +128,10 @@ class ConversationMemoryService:
             metadata["human_transfer_summary"] = data.get("human_transfer_summary")
         if "human_transfer_categories" in data:
             metadata["human_transfer_categories"] = data.get("human_transfer_categories")
+        if "booking_phase" in data:
+            metadata["booking_phase"] = data.get("booking_phase")
+        if "booking_pending" in data:
+            metadata["booking_pending"] = data.get("booking_pending")
         return metadata
 
     def add_message(
@@ -279,6 +283,42 @@ class ConversationMemoryService:
                 "human_transfer_phase": "none",
                 "human_transfer_summary": "",
                 "human_transfer_categories": [],
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_booking_awaiting_confirm(
+        self,
+        clinic_id: str,
+        from_number: str,
+        *,
+        pending: dict[str, str],
+    ) -> None:
+        """Guarda cita propuesta pendiente de confirmación (sí/confirmo) del paciente."""
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "booking_phase": "awaiting_confirm",
+                "booking_pending": dict(pending),
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def clear_booking_pending(self, clinic_id: str, from_number: str) -> None:
+        """Limpia el borrador de cita pendiente de confirmación."""
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "booking_phase": "none",
+                "booking_pending": {},
                 "updated_at": now,
                 "clinic_id": clinic_id,
                 "from_number": from_number,

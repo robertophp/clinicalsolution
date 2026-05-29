@@ -231,6 +231,39 @@ def list_upcoming_activa_citas_for_phone(
     return out
 
 
+def count_activa_citas_at_slot(
+    db: Session,
+    *,
+    clinic_id: str,
+    fecha: str,
+    hora: str,
+) -> int:
+    """
+    Cuenta citas activas de la clínica con la misma fecha y hora de inicio (HH:MM).
+    Usado cuando no hay Google Calendar para aplicar ``max_appointments_per_slot``.
+    """
+    cid = (clinic_id or "").strip()
+    fecha_s = (fecha or "").strip()
+    hora_s = (hora or "").strip()
+    if not cid or not fecha_s or not hora_s:
+        return 0
+    try:
+        d = datetime.strptime(fecha_s, "%Y-%m-%d").date()
+        t = datetime.strptime(hora_s, "%H:%M").time()
+    except ValueError:
+        return 0
+    return (
+        db.query(Cita)
+        .filter(
+            Cita.clinic_id == cid,
+            Cita.status == CITA_STATUS_ACTIVA,
+            Cita.fecha_cita == d,
+            Cita.hora_cita == t.replace(second=0, microsecond=0),
+        )
+        .count()
+    )
+
+
 def get_latest_activa_cita_for_phone(
     db: Session,
     *,

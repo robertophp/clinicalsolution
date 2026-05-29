@@ -15,6 +15,7 @@
   "allowed_intents": ["cita", "servicios", "clinica_info", "seguimiento_cita", "small_talk"],
   "calendar_id": "dra.stephaniepalacios@clinicadentaltusonrisa.com",
   "calendar_sync_enabled": true,
+  "max_appointments_per_slot": 5,
   "google_maps_link": "https://maps.app.goo.gl/AkAsZgzfy1ZgUwnbA",
   "clinic_address": "Colonia Médica, Av Max Bloch #171\nFrente a la iglesia Arzobispado 📍San Salvador, El Salvador",
   "clinic_phone": "+503 2235 3513",
