@@ -4,6 +4,47 @@ from unittest.mock import MagicMock, patch
 from backend.services.calendar_service import CalendarService, CALENDAR_SUMMARY_MAX_LEN
 
 
+def test_get_available_hourly_slots_allows_slot_until_cap_reached():
+    svc = CalendarService()
+    day = date(2026, 4, 20)
+    opening = [(time(8, 0), time(12, 0))]
+    tz_sv = timezone(timedelta(hours=-6))
+    busy = [
+        (
+            datetime(2026, 4, 20, 9, 0, tzinfo=tz_sv),
+            datetime(2026, 4, 20, 10, 0, tzinfo=tz_sv),
+        )
+    ]
+    with patch.object(svc, "list_busy_intervals", return_value=busy):
+        slots_cap1 = svc.get_available_hourly_slots(
+            calendar_id="demo@calendar",
+            day=day,
+            opening_ranges=opening,
+            slot_minutes=60,
+            max_appointments_per_slot=1,
+        )
+        slots_cap2 = svc.get_available_hourly_slots(
+            calendar_id="demo@calendar",
+            day=day,
+            opening_ranges=opening,
+            slot_minutes=60,
+            max_appointments_per_slot=2,
+        )
+    assert "09:00" not in [s.strftime("%H:%M") for s in slots_cap1]
+    assert "09:00" in [s.strftime("%H:%M") for s in slots_cap2]
+
+
+def test_count_busy_overlaps():
+    tz_sv = timezone(timedelta(hours=-6))
+    start = datetime(2026, 4, 20, 9, 0, tzinfo=tz_sv)
+    end = datetime(2026, 4, 20, 10, 0, tzinfo=tz_sv)
+    busy = [
+        (start, end),
+        (start, end),
+    ]
+    assert CalendarService._count_busy_overlaps(start, end, busy) == 2
+
+
 def test_get_available_hourly_slots_only_returns_hourly_starts():
     svc = CalendarService()
     day = date(2026, 4, 20)

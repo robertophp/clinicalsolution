@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .clinic import PaymentMethodLine
 
@@ -33,4 +33,6 @@ class ClinicSiteFile(BaseModel):
     whatsapp_phone_number_id: str | None = None
     whatsapp_phone_number_id_dev: str | None = None
     specialist_whatsapp: str | None = None
+    # Máximo de citas activas con la misma hora de inicio (HH:00). Default 1 si se omite.
+    max_appointments_per_slot: int = Field(default=1, ge=1)
     payment_methods: list[PaymentMethodLine] | None = None

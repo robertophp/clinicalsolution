@@ -27,6 +27,7 @@ from .services.intent_classifier import Intent, classify_intent
 from .services.intent_llm_service import llm_classify_intent
 from .services.calendar_sync_service import run_calendar_to_bigquery_sync
 from .services.human_transfer_service import (
+    HumanTransferDetection,
     build_specialist_derivation_message,
     classify_patient_summary_response,
     detect_human_transfer_need,
@@ -50,6 +51,14 @@ from .services.meta_whatsapp_service import (
 from .services.whatsapp_media_replies import reply_for_meta_media_type, reply_for_twilio_media
 
 from .domain.conversation_prompt import build_conversation_system_prompt
+from .domain.booking_confirmation import (
+    assistant_asks_booking_confirm,
+    classify_booking_confirm_response,
+    extract_pending_booking_from_conversation,
+    normalize_pending_booking_args,
+    patient_prompt_booking_declined,
+    patient_prompt_booking_unclear,
+)
 from .domain.citas_handlers import (
     _handle_agendar_cita,
     _handle_cancelar_cita,
@@ -70,6 +79,7 @@ from .domain.reply_booking_guard import claims_booking_saved_without_backend, fa
 from .domain.prompt_clinic import (
     _build_transfer_resolution_context,
 )
+from .domain.human_contact_signals import message_signals_human_contact_request
 from .domain.urgency_signals import message_signals_urgency
 from .domain.urgency_calendar import _calendar_suffix_label_for_cita
 from .domain.wa_normalization import _normalize_wa_id_for_storage
@@ -347,6 +357,57 @@ def _generate_and_persist_reply(
         conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
         return reply_text
 
+    # --- Confirmación de agendado: sí/confirmo ejecuta agendar_cita en backend ---
+    booking_phase = (metadata.get("booking_phase") or "none") if isinstance(metadata, dict) else "none"
+    booking_pending_raw = metadata.get("booking_pending") if isinstance(metadata, dict) else None
+    booking_pending: dict[str, str] | None = None
+    if isinstance(booking_pending_raw, dict):
+        booking_pending = normalize_pending_booking_args(booking_pending_raw)
+
+    if booking_phase == "awaiting_confirm" and booking_pending:
+        booking_decision = classify_booking_confirm_response(body, language)
+        if booking_decision == "approve":
+            out = _handle_agendar_cita(
+                from_number=from_number,
+                clinic_id=clinic_id,
+                language=language,
+                assistant_name=assistant_name,
+                args=booking_pending,
+            )
+            try:
+                conversation_memory.clear_booking_pending(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar booking_pending tras agendar", exc_info=True)
+            reply_text = (
+                str(out.get("mensaje")).strip()
+                if isinstance(out, dict) and out.get("mensaje")
+                else patient_prompt_booking_unclear(language)
+            )
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
+        if booking_decision == "decline":
+            try:
+                conversation_memory.clear_booking_pending(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar booking_pending tras rechazo", exc_info=True)
+            reply_text = patient_prompt_booking_declined(language)
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
+        if booking_decision == "revise":
+            try:
+                conversation_memory.clear_booking_pending(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar booking_pending para revisión", exc_info=True)
+        else:
+            reply_text = patient_prompt_booking_unclear(language)
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
     # Guardrails de dominio por clínica: clasificar intención y, solo si es fuera de dominio, responder sin llamar a Gemini.
     try:
         # Primero intentamos clasificar con LLM; si falla, hacemos fallback a reglas.
@@ -380,9 +441,16 @@ def _generate_and_persist_reply(
         return reply_text
 
     # --- Derivación a especialista: detección de tema sensible (solo si hay número de especialista) ---
-    # Urgencia/dolor en este turno → flujo de citas (consultar_primer_dia_disponible), no derivación.
-    skip_transfer_for_urgency = message_signals_urgency(body)
-    if skip_transfer_for_urgency:
+    # Contacto humano explícito → derivación (prioridad sobre urgencia/dolor; no agendar citas).
+    # Urgencia/dolor sin pedido de humano → flujo de citas, no derivación en este turno.
+    force_human_contact = message_signals_human_contact_request(body)
+    skip_transfer_for_urgency = message_signals_urgency(body) and not force_human_contact
+    if force_human_contact:
+        logging.info(
+            "Derivación forzada por solicitud de contacto humano (clinic_id=%s)",
+            clinic_id,
+        )
+    elif skip_transfer_for_urgency:
         logging.info(
             "Derivación omitida por señal de urgencia/dolor (clinic_id=%s)",
             clinic_id,
@@ -394,15 +462,30 @@ def _generate_and_persist_reply(
                 clinic_id,
                 getattr(clinic_cfg, "human_transfer_topic_keys", None),
             )
-            detection = detect_human_transfer_need(
-                gemini_service,
-                message=body,
-                history=history,
-                language=language,
-                topics=topics,
-                resolution_context=_build_transfer_resolution_context(clinic_cfg, language),
-            )
+            detection: HumanTransferDetection | None
+            if force_human_contact:
+                detection = HumanTransferDetection(
+                    matched_topics=("contacto_humano",),
+                    brief_reason=(
+                        "Explicit request to speak with a doctor or staff member"
+                        if language == "en"
+                        else "Solicitud explícita de hablar con doctor/a o encargado/a"
+                    ),
+                )
+            else:
+                detection = detect_human_transfer_need(
+                    gemini_service,
+                    message=body,
+                    history=history,
+                    language=language,
+                    topics=topics,
+                    resolution_context=_build_transfer_resolution_context(clinic_cfg, language),
+                )
             if detection:
+                try:
+                    conversation_memory.clear_booking_pending(clinic_id, from_number)
+                except Exception:
+                    pass
                 summary = generate_transfer_summary(
                     gemini_service,
                     history=history,
@@ -481,6 +564,10 @@ def _generate_and_persist_reply(
             )
             if isinstance(out, dict) and out.get("mensaje") and not out.get("error"):
                 mutation_tool_saved_ok["value"] = True
+                try:
+                    conversation_memory.clear_booking_pending(clinic_id, from_number)
+                except Exception:
+                    pass
             return out
         if name == "cancelar_cita":
             out = _handle_cancelar_cita(from_number=from_number, clinic_id=clinic_id, language=language)
@@ -514,6 +601,31 @@ def _generate_and_persist_reply(
             clinic_id,
         )
         reply_text = fallback_ask_explicit_confirm(language)
+
+    stored_full_name_for_pending = (metadata.get("patient_name") or "").strip() if isinstance(metadata, dict) else ""
+    default_patient_name = stored_full_name_for_pending or (stored_first_name or "").strip() or "Paciente"
+    if (
+        not mutation_tool_saved_ok["value"]
+        and assistant_asks_booking_confirm(reply_text)
+    ):
+        pending_extracted = extract_pending_booking_from_conversation(
+            gemini_service,
+            history=history,
+            assistant_confirmation_message=reply_text,
+            language=language,
+            clinic_id=clinic_id,
+            default_patient_name=default_patient_name,
+        )
+        if pending_extracted:
+            try:
+                conversation_memory.set_booking_awaiting_confirm(
+                    clinic_id,
+                    from_number,
+                    pending=pending_extracted,
+                )
+            except Exception:
+                logging.warning("No se pudo guardar booking_pending en Firestore", exc_info=True)
+
     conversation_memory.add_message(clinic_id, from_number, "user", body)
     conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
     return reply_text

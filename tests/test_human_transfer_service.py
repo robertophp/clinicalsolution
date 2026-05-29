@@ -38,6 +38,7 @@ def test_topics_for_clinic_keys_filter():
     filtered = topics_for_clinic_keys(["quejas", "creditos_fiscales"])
     assert len(filtered) == 2
     assert {t.key for t in filtered} <= all_keys
+    assert "contacto_humano" in all_keys
 
 
 def test_classify_patient_summary_approve_heuristic_es():

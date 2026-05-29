@@ -24,6 +24,8 @@ class ClinicConfig(BaseModel):
     # Integración con Google Calendar: ID del calendario y flag para habilitar sync.
     calendar_id: str | None = None
     calendar_sync_enabled: bool = False
+    # Cupo de citas simultáneas por hora de inicio (config en site.json; default 1).
+    max_appointments_per_slot: int = 1
     # Ubicación y cómo llegar (opcional por clínica).
     google_maps_link: str | None = None
     clinic_address: str | None = None

@@ -27,6 +27,10 @@ Al arrancar, `domain/clinic_loader.py` valida con Pydantic, fusiona `brand` + `s
 
 Misma información operativa que antes vivía en el objeto de clínica dentro de `clinics_mock.json`: `opening_hours`, `allowed_intents`, `calendar_id`, `calendar_sync_enabled`, enlaces y textos de ubicación, `whatsapp_phone_number_id` (Meta), `specialist_whatsapp`, `payment_methods`, etc.
 
+| Campo | Descripción |
+|--------|-------------|
+| `max_appointments_per_slot` | Opcional. Máximo de citas con la **misma hora de inicio** (HH:00, visitas de 60 min). Default `1`. Con Google Calendar activo se cuentan eventos que solapan esa hora; sin Calendar se cuentan citas `activa` en BigQuery. Ej.: `5` permite hasta cinco agendados a las 10:00. |
+
 ## `policies.json`
 
 | Campo | Descripción |
