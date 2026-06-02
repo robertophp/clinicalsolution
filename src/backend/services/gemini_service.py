@@ -229,13 +229,13 @@ class GeminiServiceError(Exception):
 
 
 class GeminiService:
-    """Wrapper ligero sobre Gemini 1.5 Flash en Vertex AI."""
+    """Wrapper ligero sobre Gemini 2.5 Flash en Vertex AI."""
 
     def __init__(
         self,
         project_id: str | None = None,
         location: str | None = None,
-        model_name: str = "gemini-2.0-flash-001",
+        model_name: str = "gemini-2.5-flash",
     ) -> None:
         self._project_id = project_id or settings.PROJECT_ID
         self._location = location or settings.LOCATION
