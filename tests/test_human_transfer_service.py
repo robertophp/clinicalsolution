@@ -54,6 +54,19 @@ def test_classify_patient_summary_approve_heuristic_es():
     )
 
 
+def test_classify_patient_summary_approve_heuristic_confirmo():
+    gemini = object()
+    assert (
+        classify_patient_summary_response(
+            gemini,
+            patient_message="confirmo",
+            language="es",
+            current_summary="Resumen de prueba.",
+        )
+        == "approve"
+    )
+
+
 def test_sanitize_specialist_summary_strips_echoed_prompt_and_question():
     raw = """Asistente: He actualizado el resumen para nuestro especialista:
 Resumen ejecutivo:

@@ -38,7 +38,7 @@ async def healthcheck_gcp() -> dict:
         reply = gemini_service.generate_reply(
             system_prompt="Eres un asistente. Responde solo: OK.",
             chat_history=[{"role": "user", "content": "Di hola"}],
-            max_output_tokens=10,
+            max_output_tokens=64,
         )
         result["gemini"] = "ok" if reply else "empty_response"
     except Exception as e:  # noqa: BLE001
