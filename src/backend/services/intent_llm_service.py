@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Mapping, Sequence
 
-from .gemini_service import GeminiService, GeminiServiceError
+from .gemini_service import CLASSIFIER_MAX_OUTPUT_TOKENS, GeminiService, GeminiServiceError
 from .intent_classifier import Intent
 
 
@@ -94,7 +94,7 @@ def llm_classify_intent(
         system_prompt=prompt,
         chat_history=None,
         temperature=0.0,
-        max_output_tokens=8,
+        max_output_tokens=CLASSIFIER_MAX_OUTPUT_TOKENS,
     ).strip()
 
     # Normalizamos la etiqueta devuelta.

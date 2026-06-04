@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Callable, Iterable, Mapping, Sequence
+
+logger = logging.getLogger(__name__)
+
+# Clasificadores de una palabra: Gemini 2.5 puede consumir salida en "thinking".
+CLASSIFIER_MAX_OUTPUT_TOKENS = 64
 
 import vertexai
 from vertexai.generative_models import (
@@ -24,6 +30,56 @@ _TOOL_CODE_LEAK_RE = re.compile(
     r"reagendar_cita\s*\(|cancelar_cita\s*\(|suffix_urgencia\s*=",
     re.IGNORECASE,
 )
+
+
+def _candidate_finish_reason(candidate) -> str:
+    raw = getattr(candidate, "finish_reason", None)
+    if raw is None:
+        return ""
+    return str(getattr(raw, "name", raw)).upper()
+
+
+def _text_from_candidate_parts(candidate) -> str:
+    content = getattr(candidate, "content", None)
+    if not content:
+        return ""
+    chunks: list[str] = []
+    for part in getattr(content, "parts", None) or []:
+        t = getattr(part, "text", None)
+        if t:
+            chunks.append(t)
+    return "".join(chunks).strip()
+
+
+def extract_response_text(response) -> str | None:
+    """
+    Texto visible del modelo. Con Gemini 2.5, max_output_tokens bajo + thinking
+    puede dejar finish_reason MAX_TOKENS y response.text lanza ValueError.
+    """
+    try:
+        text = response.text
+        if text and str(text).strip():
+            return str(text).strip()
+    except ValueError:
+        pass
+
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        return None
+
+    candidate = candidates[0]
+    partial = _text_from_candidate_parts(candidate)
+    if partial:
+        if _candidate_finish_reason(candidate).endswith("MAX_TOKENS"):
+            logger.warning(
+                "Gemini respuesta truncada (MAX_TOKENS); usando texto parcial (%d chars)",
+                len(partial),
+            )
+        return partial
+
+    if _candidate_finish_reason(candidate).endswith("MAX_TOKENS"):
+        logger.warning("Gemini sin texto utilizable (MAX_TOKENS)")
+    return None
 
 
 def reply_looks_like_tool_code_leak(text: str) -> bool:
@@ -311,11 +367,13 @@ class GeminiService:
                 f"Error generando contenido con Gemini: {type(exc).__name__}: {exc}"
             ) from exc
 
-        text = getattr(response, "text", None)
+        text = extract_response_text(response)
         if not text:
-            raise GeminiServiceError("Gemini devolvió una respuesta vacía.")
+            raise GeminiServiceError(
+                "Gemini devolvió una respuesta vacía o truncada (p. ej. MAX_TOKENS)."
+            )
 
-        return text.strip()
+        return text
 
     def generate_reply_with_tools(
         self,
@@ -377,10 +435,12 @@ class GeminiService:
             fc_list = getattr(candidate, "function_calls", None) or []
 
             if not fc_list:
-                text = getattr(response, "text", None)
+                text = extract_response_text(response)
                 if not text:
-                    raise GeminiServiceError("Gemini devolvió una respuesta vacía.")
-                out = text.strip()
+                    raise GeminiServiceError(
+                        "Gemini devolvió una respuesta vacía o truncada (p. ej. MAX_TOKENS)."
+                    )
+                out = text
                 if reply_looks_like_tool_code_leak(out) and code_leak_retries < max_code_leak_retries:
                     code_leak_retries += 1
                     contents.append(Content(role="model", parts=candidate.content.parts))

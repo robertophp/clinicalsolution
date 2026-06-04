@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Mapping, Sequence
 
-from .gemini_service import GeminiService, GeminiServiceError
+from .gemini_service import CLASSIFIER_MAX_OUTPUT_TOKENS, GeminiService, GeminiServiceError
 from .human_transfer_topics import TransferTopicDefinition, format_topics_for_prompt
 
 logger = logging.getLogger(__name__)
@@ -464,10 +464,15 @@ def classify_patient_summary_response(
             system_prompt=instructions + f"\n\nPaciente: {msg}\nEtiqueta:",
             chat_history=None,
             temperature=0.0,
-            max_output_tokens=8,
+            max_output_tokens=CLASSIFIER_MAX_OUTPUT_TOKENS,
         )
         raw = raw_out.strip().lower() if isinstance(raw_out, str) else ""
-    except GeminiServiceError:
+    except Exception as exc:
+        logger.warning(
+            "classify_patient_summary_response Gemini error: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
         return "unclear"
 
     if "approve" in raw:
@@ -486,18 +491,26 @@ def _fallback_summary_feedback(message: str, language: str) -> PatientSummaryInt
     m = (message or "").strip().lower()
     lang = (language or "").strip().lower()
     if lang.startswith("en"):
-        if re.fullmatch(r"(yes|yeah|yep|ok|okay|sure|send it|go ahead|correct|fine)\.?", m):
+        if re.fullmatch(
+            r"(yes|yeah|yep|ok|okay|sure|send it|go ahead|correct|fine|confirm|confirmed|"
+            r"that's right|sounds good|approve|approved)\.?",
+            m,
+        ):
             return "approve"
         if re.fullmatch(
             r"(no|nope|not now|don't want|do not want|prefer not|no thanks|never mind)\.?", m
         ):
             return "decline"
-        if re.fullmatch(r"(wrong|incorrect|add more|change it)\.?", m):
+        if re.fullmatch(
+            r"(wrong|incorrect|add more|change it|revise|update it|not quite)\.?", m
+        ):
             return "revise"
         return None
 
     if re.fullmatch(
-        r"(sí|si|ok|vale|correcto|esta bien|está bien|envía|envíalo|mandalo|mándalo|adelante|listo)\.?",
+        r"(sí|si|ok|vale|correcto|esta bien|está bien|envía|envíalo|mandalo|mándalo|"
+        r"adelante|listo|confirmo|confirmar|de acuerdo|perfecto|exacto|enviar|mandar|"
+        r"aprobado|dale|claro)\.?",
         m,
     ):
         return "approve"
