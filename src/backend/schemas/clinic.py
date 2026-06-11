@@ -42,3 +42,5 @@ class ClinicConfig(BaseModel):
     human_transfer_topic_keys: list[str] | None = None
     # Formas de pago aceptadas (solo lo listado aquí debe mencionarse al paciente).
     payment_methods: list[PaymentMethodLine] | None = None
+    # Manual de procesos / FAQ cargado desde knowledge_base_file (texto Markdown).
+    knowledge_base: str | None = None

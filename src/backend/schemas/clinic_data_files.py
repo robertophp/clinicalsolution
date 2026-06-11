@@ -15,6 +15,8 @@ class ClinicBrandFile(BaseModel):
     assistant_name: str = "Asistente Virtual"
     system_prompt: str
     system_prompt_en: str | None = None
+    # Archivo Markdown dentro de la carpeta de la clínica (p. ej. knowledge_base.md).
+    knowledge_base_file: str | None = None
 
 
 class ClinicSiteFile(BaseModel):

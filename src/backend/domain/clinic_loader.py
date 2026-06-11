@@ -18,6 +18,13 @@ def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _load_knowledge_base_file(path: Path) -> str:
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        raise RuntimeError(f"knowledge_base vacío en {path}")
+    return text
+
+
 def _load_transfer_topics_file(path: Path) -> tuple[TransferTopicDefinition, ...]:
     raw = _read_json(path)
     if not isinstance(raw, list):
@@ -39,7 +46,13 @@ def _load_transfer_topics_file(path: Path) -> tuple[TransferTopicDefinition, ...
     return tuple(out)
 
 
-def _merge_clinic_config(brand: ClinicBrandFile, site: ClinicSiteFile, policies: ClinicPolicies) -> ClinicConfig:
+def _merge_clinic_config(
+    brand: ClinicBrandFile,
+    site: ClinicSiteFile,
+    policies: ClinicPolicies,
+    *,
+    knowledge_base: str | None = None,
+) -> ClinicConfig:
     if brand.clinic_id != site.clinic_id or brand.clinic_id != policies.clinic_id:
         raise RuntimeError(
             f"Inconsistencia de clinic_id en carpeta {brand.clinic_id!r}: "
@@ -53,6 +66,7 @@ def _merge_clinic_config(brand: ClinicBrandFile, site: ClinicSiteFile, policies:
         system_prompt=brand.system_prompt,
         system_prompt_en=brand.system_prompt_en,
         human_transfer_topic_keys=policies.human_transfer_topic_keys,
+        knowledge_base=knowledge_base,
         **site_dump,
     )
 
@@ -98,7 +112,22 @@ def load_clinic_tree(root: Path) -> dict[str, ClinicConfig]:
         except ValidationError as exc:
             raise RuntimeError(f"policies.json inválido en {child}") from exc
 
-        cfg = _merge_clinic_config(brand, site, policies)
+        knowledge_base: str | None = None
+        kb_rel = (brand.knowledge_base_file or "").strip()
+        if kb_rel:
+            clinic_root = child.resolve()
+            kb_path = (child / kb_rel).resolve()
+            try:
+                kb_path.relative_to(clinic_root)
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"knowledge_base_file debe estar dentro de la carpeta de la clínica: {kb_rel!r}"
+                ) from exc
+            if not kb_path.is_file():
+                raise FileNotFoundError(f"No existe knowledge_base_file={kb_rel!r} para {brand.clinic_id}")
+            knowledge_base = _load_knowledge_base_file(kb_path)
+
+        cfg = _merge_clinic_config(brand, site, policies, knowledge_base=knowledge_base)
         if cfg.id in clinics:
             raise RuntimeError(f"clinic_id duplicado: {cfg.id}")
         clinics[cfg.id] = cfg

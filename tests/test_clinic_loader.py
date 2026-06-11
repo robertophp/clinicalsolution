@@ -23,6 +23,9 @@ def test_load_clinic_tree_demo_clinics(clinics_root: Path) -> None:
     assert clinics["demo_clinic_1"].whatsapp_phone_number_id_dev == "1135563346296793"
     assert clinics["demo_clinic_1"].max_appointments_per_slot == 5
     assert CLINIC_POLICIES_BY_ID["demo_clinic_1"].human_transfer_topic_keys is None
+    assert clinics["demo_clinic_1"].knowledge_base is not None
+    assert "DIAGNÓSTICO DENTAL" in clinics["demo_clinic_1"].knowledge_base
+    assert clinics["demo_clinic_2"].knowledge_base is None
 
 
 def test_whatsapp_phone_map_includes_prod_and_dev_ids(clinics_root: Path) -> None:

@@ -8,6 +8,7 @@ src/backend/data/clinics/
     brand.json      # nombre, asistente, system prompts (tono / rol)
     site.json       # horarios, calendario, WhatsApp Meta, pagos, ubicación
     policies.json   # derivación humana, textos de confirmación de agendado, etc.
+    knowledge_base.md    # opcional; ver brand.knowledge_base_file
     transfer_topics.json   # opcional; ver policies.transfer_topics_file
 ```
 
@@ -22,6 +23,7 @@ Al arrancar, `domain/clinic_loader.py` valida con Pydantic, fusiona `brand` + `s
 | `assistant_name` | Cómo se presenta el bot. |
 | `system_prompt` | Instrucciones base en español. |
 | `system_prompt_en` | Opcional; si falta y el usuario escribe en inglés, el backend añade una nota para responder en inglés. |
+| `knowledge_base_file` | Opcional. Nombre de un archivo **Markdown dentro de la misma carpeta** (p. ej. `knowledge_base.md`) con manual de procesos, FAQs y recomendaciones de la clínica. Se inyecta en el system prompt del turno principal como base de conocimiento **aditiva** (no limita respuestas fuera del manual). Incluye reglas de tono cálido y empático. Si el paciente escribe en inglés, el manual en español se usa como hechos y el agente responde en inglés. Requiere redeploy para tomar cambios. |
 
 ## `site.json`
 
@@ -42,14 +44,15 @@ Misma información operativa que antes vivía en el objeto de clínica dentro de
 
 ## Prompts y Jinja2
 
-Los bloques largos de identidad, reglas de horario de cita y herramientas de calendario se renderizan desde `src/backend/templates/prompt/` (`identity_extra.j2`, `schedule_rule.j2`, `citas_tools.j2`). La composición final sigue en `domain/conversation_prompt.py` (fechas de referencia, catálogo, bloque de urgencia/dolor).
+Los bloques largos de identidad, reglas de horario de cita, manual de procesos y herramientas de calendario se renderizan desde `src/backend/templates/prompt/` (`identity_extra.j2`, `schedule_rule.j2`, `knowledge_base.j2`, `citas_tools.j2`). La composición final sigue en `domain/conversation_prompt.py` (fechas de referencia, catálogo, base de conocimiento si existe, bloque de urgencia/dolor).
 
 ## Checklist: nueva clínica
 
 1. Crear `src/backend/data/clinics/<nuevo_id>/` con los tres JSON obligatorios.
-2. Añadir servicios en `data/services_catalog.json` para ese `clinic_id` (o `"*"`).
-3. Si usas Meta, rellenar `whatsapp_phone_number_id` en `site.json` y documentar el valor en tu `.env` (token, app secret, verify token).
-4. Probar `/chat?clinic_id=<nuevo_id>` y, si aplica, el webhook Meta o Twilio.
+2. Opcional: añadir `knowledge_base.md` y referenciarlo en `brand.json` con `"knowledge_base_file": "knowledge_base.md"`.
+3. Añadir servicios en `data/services_catalog.json` para ese `clinic_id` (o `"*"`).
+4. Si usas Meta, rellenar `whatsapp_phone_number_id` en `site.json` y documentar el valor en tu `.env` (token, app secret, verify token).
+5. Probar `/chat?clinic_id=<nuevo_id>` y, si aplica, el webhook Meta o Twilio.
 
 ## Archivo JSON plano legado
 

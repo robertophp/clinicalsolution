@@ -186,7 +186,14 @@ def build_conversation_system_prompt(
     if catalog_text:
         system_prompt_effective = system_prompt_effective + catalog_text
 
-    # Catálogo antes del bloque de dolor/urgencia (prioridad citas y precios).
+    if clinic_cfg is not None and clinic_cfg.knowledge_base:
+        kb_block = env.get_template("knowledge_base.j2").render(
+            language=language,
+            knowledge_base=clinic_cfg.knowledge_base,
+        )
+        system_prompt_effective = system_prompt_effective + "\n\n" + kb_block.strip() + "\n"
+
+    # Catálogo y manual antes del bloque de dolor/urgencia (prioridad citas y precios).
     system_prompt_effective = system_prompt_effective.strip() + build_citas_tool_instruction(language, policies)
     system_prompt_effective = system_prompt_effective + _format_urgency_dolor_prompt_block(language)
     return system_prompt_effective
