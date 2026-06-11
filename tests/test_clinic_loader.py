@@ -40,3 +40,23 @@ def test_demo_clinic_2_transfer_topic_filter(clinics_root: Path) -> None:
     topics = resolve_transfer_topics_for_clinic("demo_clinic_2", ["quejas"])
     assert len(topics) == 1
     assert topics[0].key == "quejas"
+
+
+def test_missing_knowledge_base_file_does_not_crash(tmp_path: Path) -> None:
+    clinic_dir = tmp_path / "demo_missing_kb"
+    clinic_dir.mkdir()
+    (clinic_dir / "brand.json").write_text(
+        '{"clinic_id": "demo_missing_kb", "name": "Test", '
+        '"system_prompt": "x", "knowledge_base_file": "knowledge_base.md"}',
+        encoding="utf-8",
+    )
+    (clinic_dir / "site.json").write_text(
+        '{"clinic_id": "demo_missing_kb"}', encoding="utf-8"
+    )
+    (clinic_dir / "policies.json").write_text(
+        '{"clinic_id": "demo_missing_kb"}', encoding="utf-8"
+    )
+
+    clinics = load_clinic_tree(tmp_path)
+    assert "demo_missing_kb" in clinics
+    assert clinics["demo_missing_kb"].knowledge_base is None
