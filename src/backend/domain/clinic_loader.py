@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 
 from ..schemas.clinic import ClinicConfig
 from ..schemas.clinic_data_files import ClinicBrandFile, ClinicSiteFile
@@ -124,8 +127,14 @@ def load_clinic_tree(root: Path) -> dict[str, ClinicConfig]:
                     f"knowledge_base_file debe estar dentro de la carpeta de la clínica: {kb_rel!r}"
                 ) from exc
             if not kb_path.is_file():
-                raise FileNotFoundError(f"No existe knowledge_base_file={kb_rel!r} para {brand.clinic_id}")
-            knowledge_base = _load_knowledge_base_file(kb_path)
+                # Aditivo: si falta el manual no tumbamos el arranque; degradamos tono/contenido extra.
+                logger.warning(
+                    "knowledge_base_file=%r no encontrado para %s; se continúa sin base de conocimiento.",
+                    kb_rel,
+                    brand.clinic_id,
+                )
+            else:
+                knowledge_base = _load_knowledge_base_file(kb_path)
 
         cfg = _merge_clinic_config(brand, site, policies, knowledge_base=knowledge_base)
         if cfg.id in clinics:
