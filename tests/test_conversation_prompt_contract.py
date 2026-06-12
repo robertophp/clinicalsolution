@@ -52,6 +52,9 @@ def test_system_prompt_contains_clinic_and_tools() -> None:
     assert "centro de imágenes propio" in text
     assert "ESTILO Y TONO" in text
     assert "NO cambies el flujo de agendamiento" in text
+    assert "FORMATO DE RESPUESTA (WhatsApp)" in text
+    assert "Máximo 3–4 líneas cortas" in text
+    assert "beneficios resumidos en 1 frase natural" in text
 
 
 def test_system_prompt_without_knowledge_base_omits_block() -> None:
@@ -71,3 +74,4 @@ def test_system_prompt_without_knowledge_base_omits_block() -> None:
         policies=CLINIC_POLICIES_BY_ID.get(cfg.id),
     )
     assert "BASE DE CONOCIMIENTO DE LA CLÍNICA" not in text
+    assert "FORMATO DE RESPUESTA (WhatsApp)" in text

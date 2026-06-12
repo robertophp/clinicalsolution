@@ -7,7 +7,12 @@ import json
 import re
 from typing import Any, Literal, Mapping, Sequence
 
-from ..services.gemini_service import GeminiService, GeminiServiceError
+from ..services.gemini_service import (
+    REPLY_MAX_OUTPUT_TOKENS_RETRY,
+    SHORT_JSON_MAX_OUTPUT_TOKENS,
+    GeminiService,
+    GeminiServiceError,
+)
 from .catalog import _services_for_clinic
 
 BookingConfirmIntent = Literal["approve", "decline", "revise", "unclear"]
@@ -183,7 +188,9 @@ def extract_pending_booking_from_conversation(
             system_prompt=instructions + f"\n\n=== Hilo ===\n{thread}\n\nJSON:",
             chat_history=None,
             temperature=0.0,
-            max_output_tokens=256,
+            max_output_tokens=SHORT_JSON_MAX_OUTPUT_TOKENS,
+            low_thinking=True,
+            retry_max_output_tokens=REPLY_MAX_OUTPUT_TOKENS_RETRY,
         )
     except GeminiServiceError:
         return None

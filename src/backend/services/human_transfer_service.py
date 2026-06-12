@@ -10,7 +10,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Mapping, Sequence
 
-from .gemini_service import CLASSIFIER_MAX_OUTPUT_TOKENS, GeminiService, GeminiServiceError
+from .gemini_service import (
+    CLASSIFIER_MAX_OUTPUT_TOKENS,
+    REPLY_MAX_OUTPUT_TOKENS_RETRY,
+    SHORT_JSON_MAX_OUTPUT_TOKENS,
+    SUMMARY_MAX_OUTPUT_TOKENS,
+    GeminiService,
+    GeminiServiceError,
+)
 from .human_transfer_topics import TransferTopicDefinition, format_topics_for_prompt
 
 logger = logging.getLogger(__name__)
@@ -287,7 +294,9 @@ def detect_human_transfer_need(
             system_prompt="\n".join(prompt_parts),
             chat_history=None,
             temperature=0.0,
-            max_output_tokens=256,
+            max_output_tokens=SHORT_JSON_MAX_OUTPUT_TOKENS,
+            low_thinking=True,
+            retry_max_output_tokens=REPLY_MAX_OUTPUT_TOKENS_RETRY,
         )
         if not isinstance(raw, str):
             return None
@@ -406,7 +415,9 @@ def generate_transfer_summary(
         system_prompt="\n".join(prompt_parts),
         chat_history=None,
         temperature=0.2,
-        max_output_tokens=400,
+        max_output_tokens=SUMMARY_MAX_OUTPUT_TOKENS,
+        low_thinking=True,
+        retry_max_output_tokens=REPLY_MAX_OUTPUT_TOKENS_RETRY,
     )
     if not isinstance(text, str):
         text = ""
@@ -465,6 +476,7 @@ def classify_patient_summary_response(
             chat_history=None,
             temperature=0.0,
             max_output_tokens=CLASSIFIER_MAX_OUTPUT_TOKENS,
+            low_thinking=True,
         )
         raw = raw_out.strip().lower() if isinstance(raw_out, str) else ""
     except Exception as exc:

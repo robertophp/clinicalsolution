@@ -4,11 +4,6 @@ import logging
 import re
 from typing import Callable, Iterable, Mapping, Sequence
 
-logger = logging.getLogger(__name__)
-
-# Clasificadores de una palabra: Gemini 2.5 puede consumir salida en "thinking".
-CLASSIFIER_MAX_OUTPUT_TOKENS = 64
-
 import vertexai
 from vertexai.generative_models import (
     Content,
@@ -18,6 +13,20 @@ from vertexai.generative_models import (
     Part,
     Tool,
 )
+
+try:
+    from vertexai.generative_models import ThinkingConfig
+except ImportError:  # pragma: no cover - SDK antiguo sin thinking
+    ThinkingConfig = None  # type: ignore[misc, assignment]
+
+logger = logging.getLogger(__name__)
+
+# Presupuestos de salida (Gemini 2.5 puede consumir tokens en "thinking").
+CLASSIFIER_MAX_OUTPUT_TOKENS = 64
+REPLY_MAX_OUTPUT_TOKENS = 1024
+REPLY_MAX_OUTPUT_TOKENS_RETRY = 2048
+SUMMARY_MAX_OUTPUT_TOKENS = 768
+SHORT_JSON_MAX_OUTPUT_TOKENS = 384
 
 from ..config import settings
 from .gemini_vertex_call import call_with_timeout_and_retries
@@ -51,35 +60,76 @@ def _text_from_candidate_parts(candidate) -> str:
     return "".join(chunks).strip()
 
 
-def extract_response_text(response) -> str | None:
+def _is_max_tokens_finish(finish_reason: str) -> bool:
+    return (finish_reason or "").upper().endswith("MAX_TOKENS")
+
+
+def _response_finish_reason(response) -> str:
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        return ""
+    return _candidate_finish_reason(candidates[0])
+
+
+def extract_text_and_finish(response) -> tuple[str | None, str]:
     """
-    Texto visible del modelo. Con Gemini 2.5, max_output_tokens bajo + thinking
-    puede dejar finish_reason MAX_TOKENS y response.text lanza ValueError.
+    Texto visible y finish_reason. Con Gemini 2.5, response.text puede lanzar ValueError.
     """
+    finish = _response_finish_reason(response)
     try:
         text = response.text
         if text and str(text).strip():
-            return str(text).strip()
+            return str(text).strip(), finish
     except ValueError:
         pass
 
     candidates = getattr(response, "candidates", None) or []
     if not candidates:
-        return None
+        return None, finish
 
     candidate = candidates[0]
+    finish = _candidate_finish_reason(candidate)
     partial = _text_from_candidate_parts(candidate)
     if partial:
-        if _candidate_finish_reason(candidate).endswith("MAX_TOKENS"):
-            logger.warning(
-                "Gemini respuesta truncada (MAX_TOKENS); usando texto parcial (%d chars)",
-                len(partial),
-            )
-        return partial
+        return partial, finish
+    return None, finish
 
-    if _candidate_finish_reason(candidate).endswith("MAX_TOKENS"):
+
+def extract_response_text(response) -> str | None:
+    """Wrapper de compatibilidad; registra warning si el texto llegó truncado."""
+    text, finish = extract_text_and_finish(response)
+    if text and _is_max_tokens_finish(finish):
+        logger.warning(
+            "Gemini respuesta truncada (MAX_TOKENS); usando texto parcial (%d chars)",
+            len(text),
+        )
+    elif not text and _is_max_tokens_finish(finish):
         logger.warning("Gemini sin texto utilizable (MAX_TOKENS)")
-    return None
+    return text
+
+
+def _build_generation_config(
+    *,
+    temperature: float,
+    max_output_tokens: int,
+    low_thinking: bool = False,
+) -> GenerationConfig:
+    kwargs: dict = {
+        "temperature": temperature,
+        "max_output_tokens": max_output_tokens,
+    }
+    if low_thinking and ThinkingConfig is not None:
+        try:
+            kwargs["thinking_config"] = ThinkingConfig(thinking_budget=0)
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        return GenerationConfig(**kwargs)
+    except TypeError:
+        return GenerationConfig(
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
 
 
 def reply_looks_like_tool_code_leak(text: str) -> bool:
@@ -346,6 +396,8 @@ class GeminiService:
         *,
         temperature: float = 0.3,
         max_output_tokens: int = 512,
+        low_thinking: bool = False,
+        retry_max_output_tokens: int | None = None,
     ) -> str:
         """Genera una respuesta textual a partir del prompt del sistema y el historial."""
         if self._model is None:
@@ -354,12 +406,30 @@ class GeminiService:
         history_text = self._format_history(chat_history or [])
         prompt = self._build_prompt(system_prompt=system_prompt, history_text=history_text)
 
+        token_budgets = [max_output_tokens]
+        if retry_max_output_tokens and retry_max_output_tokens > max_output_tokens:
+            token_budgets.append(retry_max_output_tokens)
+
+        last_text: str | None = None
+        last_finish = ""
         try:
-            config = GenerationConfig(
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-            )
-            response = self._vertex_generate(contents=prompt, generation_config=config)
+            for attempt, budget in enumerate(token_budgets):
+                config = _build_generation_config(
+                    temperature=temperature,
+                    max_output_tokens=budget,
+                    low_thinking=low_thinking,
+                )
+                response = self._vertex_generate(contents=prompt, generation_config=config)
+                text, finish = extract_text_and_finish(response)
+                last_text, last_finish = text, finish
+                if text and not _is_max_tokens_finish(finish):
+                    return text
+                if text and attempt < len(token_budgets) - 1:
+                    logger.info(
+                        "Gemini MAX_TOKENS con %d tokens; reintentando con %d",
+                        budget,
+                        token_budgets[attempt + 1],
+                    )
         except GeminiServiceError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -367,13 +437,17 @@ class GeminiService:
                 f"Error generando contenido con Gemini: {type(exc).__name__}: {exc}"
             ) from exc
 
-        text = extract_response_text(response)
-        if not text:
-            raise GeminiServiceError(
-                "Gemini devolvió una respuesta vacía o truncada (p. ej. MAX_TOKENS)."
-            )
+        if last_text:
+            if _is_max_tokens_finish(last_finish):
+                logger.warning(
+                    "Gemini respuesta truncada tras reintento (%d chars)",
+                    len(last_text),
+                )
+            return last_text
 
-        return text
+        raise GeminiServiceError(
+            "Gemini devolvió una respuesta vacía o truncada (p. ej. MAX_TOKENS)."
+        )
 
     def generate_reply_with_tools(
         self,
@@ -383,7 +457,7 @@ class GeminiService:
         tool_handler: Callable[[str, dict], dict],
         reply_language: str = "es",
         temperature: float = 0.3,
-        max_output_tokens: int = 512,
+        max_output_tokens: int = REPLY_MAX_OUTPUT_TOKENS,
         max_tool_rounds: int = 3,
     ) -> str:
         """
@@ -404,9 +478,10 @@ class GeminiService:
 
         history_text = self._format_history(chat_history or [])
         prompt = self._build_prompt(system_prompt=system_prompt, history_text=history_text)
-        config = GenerationConfig(
+        current_max_tokens = max_output_tokens
+        config = _build_generation_config(
             temperature=temperature,
-            max_output_tokens=max_output_tokens,
+            max_output_tokens=current_max_tokens,
         )
 
         contents = [Content(role="user", parts=[Part.from_text(prompt)])]
@@ -435,7 +510,30 @@ class GeminiService:
             fc_list = getattr(candidate, "function_calls", None) or []
 
             if not fc_list:
-                text = extract_response_text(response)
+                text, finish = extract_text_and_finish(response)
+                if (
+                    text
+                    and _is_max_tokens_finish(finish)
+                    and current_max_tokens < REPLY_MAX_OUTPUT_TOKENS_RETRY
+                ):
+                    logger.info(
+                        "Gemini MAX_TOKENS en respuesta con tools (%d); reintentando con %d",
+                        current_max_tokens,
+                        REPLY_MAX_OUTPUT_TOKENS_RETRY,
+                    )
+                    current_max_tokens = REPLY_MAX_OUTPUT_TOKENS_RETRY
+                    config = _build_generation_config(
+                        temperature=temperature,
+                        max_output_tokens=current_max_tokens,
+                    )
+                    retry_response = self._vertex_generate(
+                        contents=contents,
+                        generation_config=config,
+                        tools=[CITAS_TOOLS],
+                    )
+                    if retry_response.candidates:
+                        text, finish = extract_text_and_finish(retry_response)
+                        candidate = retry_response.candidates[0]
                 if not text:
                     raise GeminiServiceError(
                         "Gemini devolvió una respuesta vacía o truncada (p. ej. MAX_TOKENS)."
@@ -453,6 +551,11 @@ class GeminiService:
                     continue
                 if reply_looks_like_tool_code_leak(out):
                     return _code_leak_fallback_message(reply_language)
+                if _is_max_tokens_finish(finish):
+                    logger.warning(
+                        "Gemini respuesta con tools truncada tras reintento (%d chars)",
+                        len(out),
+                    )
                 return out
 
             used_tools += 1
@@ -515,8 +618,8 @@ class GeminiService:
                 "",
             ])
         parts.append(
-            "Responde como asistente para una clínica dental, de forma clara y empática, "
-            "en el mismo idioma en que te escriba el usuario."
+            "Responde como asistente para una clínica dental, de forma clara, empática y breve "
+            "(máximo 3–4 líneas cortas en WhatsApp), en el mismo idioma en que te escriba el usuario."
         )
         parts.append(
             "Nunca incluyas en tu respuesta al paciente código de programación, llamadas tipo print(...), "
@@ -536,9 +639,16 @@ __all__ = [
     "AGENDAR_CITA_TOOL",
     "CITAS_MUTATION_TOOL_NAMES",
     "CITAS_TOOLS",
+    "CLASSIFIER_MAX_OUTPUT_TOKENS",
     "LISTAR_MIS_CITAS_PROXIMAS_DECLARATION",
+    "REPLY_MAX_OUTPUT_TOKENS",
+    "REPLY_MAX_OUTPUT_TOKENS_RETRY",
+    "SHORT_JSON_MAX_OUTPUT_TOKENS",
+    "SUMMARY_MAX_OUTPUT_TOKENS",
     "GeminiService",
     "GeminiServiceError",
+    "extract_response_text",
+    "extract_text_and_finish",
     "reply_looks_like_tool_code_leak",
 ]
 

@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, PropertyMock
 
-from backend.services.gemini_service import extract_response_text
+from backend.services.gemini_service import extract_response_text, extract_text_and_finish
 
 
 def test_extract_response_text_from_text_property():
@@ -22,6 +22,15 @@ def test_extract_response_text_when_text_raises_uses_parts():
         )
     ]
     assert extract_response_text(response) == "revise"
+
+
+def test_extract_text_and_finish_from_text_property():
+    response = MagicMock()
+    type(response).text = PropertyMock(return_value="hola")
+    response.candidates = []
+    text, finish = extract_text_and_finish(response)
+    assert text == "hola"
+    assert finish == ""
 
 
 def test_extract_response_text_max_tokens_no_parts_returns_none():
