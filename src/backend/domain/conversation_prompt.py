@@ -147,6 +147,7 @@ def build_conversation_system_prompt(
         clinic_id=clinic_id,
         identidad_paciente=identidad_paciente,
         is_first_message=is_first_message,
+        language=language,
     ).strip() + "\n"
 
     if language == "en" and system_prompt_en:

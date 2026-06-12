@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from ..schemas.clinic import ClinicConfig
+from ..services.intent_classifier import extract_knowledge_base_topics
+from .catalog import _services_for_clinic
 
 _WEEKDAYS_ES = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 _WEEKDAYS_EN = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
@@ -306,6 +308,53 @@ def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language
     """
     use_en = (language or "").strip().lower().startswith("en")
     chunks: list[str] = []
+
+    if clinic_cfg is not None:
+        # Servicios del catálogo (solo nombre legible, deduplicado) para que el clasificador
+        # verifique si la clínica ofrece el tratamiento ANTES de derivar.
+        service_names: list[str] = []
+        seen_names: set[str] = set()
+        for s in _services_for_clinic(getattr(clinic_cfg, "id", "") or ""):
+            name = (s.get("name_en") if use_en else s.get("name")) or s.get("name") or s.get("name_en") or ""
+            name = str(name).strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen_names:
+                continue
+            seen_names.add(key)
+            service_names.append(name)
+
+        kb_topics = extract_knowledge_base_topics(getattr(clinic_cfg, "knowledge_base", None))
+
+        if service_names or kb_topics:
+            offered_lines: list[str] = []
+            if service_names:
+                offered_lines.append("Servicios del catálogo: " + "; ".join(service_names[:120]))
+            if kb_topics:
+                offered_lines.append("Temas del manual de la clínica: " + "; ".join(kb_topics))
+            offered_block = "\n".join(offered_lines)
+            if use_en:
+                chunks.append(
+                    "TREATMENTS/SERVICES THIS CLINIC OFFERS (catalog + knowledge base). Use this to verify scope "
+                    "BEFORE escalating:\n"
+                    f"{offered_block}\n"
+                    "If the patient is only ASKING (info, price, options) about any treatment that appears here "
+                    "(or an obvious synonym/variant), set requires_human_transfer=false: the assistant must answer "
+                    "with empathy, a reference price from the catalog, and offer to book an evaluation. "
+                    "Do NOT escalate just because the case sounds complex or specialized if the treatment is covered here."
+                )
+            else:
+                chunks.append(
+                    "TRATAMIENTOS/SERVICIOS QUE ESTA CLÍNICA SÍ OFRECE (catálogo + base de conocimiento). Úsalo para "
+                    "verificar el alcance ANTES de derivar:\n"
+                    f"{offered_block}\n"
+                    "Si el paciente solo PREGUNTA (información, precio, opciones) por un tratamiento que aparece aquí "
+                    "(o un sinónimo/variante evidente), usa requires_human_transfer=false: el asistente debe responder "
+                    "con empatía, un precio referencial del catálogo y ofrecer agendar una evaluación. "
+                    "NO derives solo porque el caso suene complejo o especializado si el tratamiento está cubierto aquí."
+                )
+
     if clinic_cfg is not None:
         raw_pm = getattr(clinic_cfg, "payment_methods", None) or []
         lines: list[str] = []
@@ -351,8 +400,10 @@ def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language
             "escalate via specialist transfer; do NOT offer appointment booking or availability tools."
         )
         chunks.append(
-            "requires_human_transfer=true only if: service not in catalog; patient insists on special quote after "
-            "evaluation was offered; serious complaint; fiscal topics; subspecialty beyond catalog."
+            "requires_human_transfer=true only if: the treatment is NOT in the offered list above (catalog/knowledge base); "
+            "patient insists on special quote after evaluation was offered; serious complaint; fiscal topics; subspecialty "
+            "beyond catalog. The 'especialidades' and 'casos_medicos_complejos' topics apply ONLY when the treatment is "
+            "outside the offered list — never escalate a simple info/price question about a treatment we offer."
         )
     else:
         chunks.append(
@@ -375,9 +426,11 @@ def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language
             "humano — derivar al especialista; NO ofrecer agendar cita ni consultar disponibilidad."
         )
         chunks.append(
-            "requires_human_transfer=true solo si: el servicio NO está en catálogo; el paciente insiste en cotización "
-            "especial o escalamiento tras ya haber recibido precio y oferta de evaluación; queja grave; temas fiscales; "
-            "especialidad fuera de alcance del catálogo."
+            "requires_human_transfer=true solo si: el tratamiento NO está en la lista ofrecida arriba (catálogo/manual); "
+            "el paciente insiste en cotización especial o escalamiento tras ya haber recibido precio y oferta de evaluación; "
+            "queja grave; temas fiscales; especialidad fuera de alcance del catálogo. Los temas 'especialidades' y "
+            "'casos_medicos_complejos' aplican SOLO cuando el tratamiento está fuera de la lista ofrecida — nunca derives "
+            "una simple pregunta de información/precio por un tratamiento que sí ofrecemos."
         )
     return "\n\n".join(chunks) if chunks else ""
 

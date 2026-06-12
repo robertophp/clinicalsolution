@@ -23,7 +23,12 @@ from .repositories import (
 )
 from .services.gemini_service import GeminiService, GeminiServiceError
 from .services.conversation_memory import ConversationMemoryService
-from .services.intent_classifier import Intent, classify_intent
+from .services.intent_classifier import (
+    Intent,
+    classify_intent,
+    extract_knowledge_base_topics,
+    knowledge_base_service_keywords,
+)
 from .services.intent_llm_service import llm_classify_intent
 from .services.calendar_sync_service import run_calendar_to_bigquery_sync
 from .services.human_transfer_service import (
@@ -80,6 +85,7 @@ from .domain.prompt_clinic import (
     _build_transfer_resolution_context,
 )
 from .domain.human_contact_signals import message_signals_human_contact_request
+from .domain.escalation_signals import message_signals_complaint_or_fiscal
 from .domain.urgency_signals import message_signals_urgency
 from .domain.urgency_calendar import _calendar_suffix_label_for_cita
 from .domain.wa_normalization import _normalize_wa_id_for_storage
@@ -409,17 +415,32 @@ def _generate_and_persist_reply(
             return reply_text
 
     # Guardrails de dominio por clínica: clasificar intención y, solo si es fuera de dominio, responder sin llamar a Gemini.
+    # Los temas del manual de la clínica (knowledge_base) cuentan como dentro de dominio.
+    clinic_knowledge_base = getattr(clinic_cfg, "knowledge_base", None) if clinic_cfg else None
+    clinic_topics = extract_knowledge_base_topics(clinic_knowledge_base)
+    clinic_service_keywords = knowledge_base_service_keywords(clinic_knowledge_base)
+    # Reglas-primero: las reglas reconocen citas, servicios del catálogo y temas del manual.
+    # Solo si las reglas NO reconocen el mensaje (OUT_OF_DOMAIN) consultamos al LLM, para no gastar
+    # una llamada en los mensajes claros y, a la vez, no bloquear por error lo que las reglas no cubren.
     try:
-        # Primero intentamos clasificar con LLM; si falla, hacemos fallback a reglas.
-        intent = llm_classify_intent(
-            gemini=gemini_service,
-            message=body,
-            language=language,
-            history=history,
+        intent = classify_intent(
+            body,
+            language,
+            history,
+            extra_service_keywords=clinic_service_keywords,
         )
     except Exception:
+        intent = Intent.OUT_OF_DOMAIN
+
+    if intent is Intent.OUT_OF_DOMAIN:
         try:
-            intent = classify_intent(body, language, history)
+            intent = llm_classify_intent(
+                gemini=gemini_service,
+                message=body,
+                language=language,
+                history=history,
+                clinic_topics=clinic_topics,
+            )
         except Exception:
             intent = Intent.OUT_OF_DOMAIN
 
@@ -445,6 +466,22 @@ def _generate_and_persist_reply(
     # Urgencia/dolor sin pedido de humano → flujo de citas, no derivación en este turno.
     force_human_contact = message_signals_human_contact_request(body)
     skip_transfer_for_urgency = message_signals_urgency(body) and not force_human_contact
+    # Compuerta de ahorro: si la intención es de rutina (servicios/cita/info/small talk) y no hay
+    # señales de contacto humano, queja o tema fiscal, omitimos la llamada LLM de detección de
+    # derivación. Las escalaciones por contacto humano (heurística) y por queja/fiscal (heurística)
+    # se preservan; solo se omite el chequeo cuando claramente no aporta.
+    routine_intents = (
+        Intent.SERVICIOS,
+        Intent.CITA,
+        Intent.SEGUIMIENTO_CITA,
+        Intent.CLINICA_INFO,
+        Intent.SMALL_TALK,
+    )
+    skip_transfer_for_clear_intent = (
+        intent in routine_intents
+        and not force_human_contact
+        and not message_signals_complaint_or_fiscal(body)
+    )
     if force_human_contact:
         logging.info(
             "Derivación forzada por solicitud de contacto humano (clinic_id=%s)",
@@ -455,7 +492,18 @@ def _generate_and_persist_reply(
             "Derivación omitida por señal de urgencia/dolor (clinic_id=%s)",
             clinic_id,
         )
-    if clinic_cfg and not skip_transfer_detection and not skip_transfer_for_urgency:
+    elif skip_transfer_for_clear_intent:
+        logging.info(
+            "Derivación omitida por intención clara sin señales de queja/fiscal/humano (clinic_id=%s, intent=%s)",
+            clinic_id,
+            intent.value,
+        )
+    if (
+        clinic_cfg
+        and not skip_transfer_detection
+        and not skip_transfer_for_urgency
+        and not skip_transfer_for_clear_intent
+    ):
         spec_digits = parse_specialist_whatsapp_recipient(getattr(clinic_cfg, "specialist_whatsapp", None))
         if spec_digits:
             topics = resolve_transfer_topics_for_clinic(
