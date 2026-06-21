@@ -15,6 +15,14 @@ from .cita_repository import (
     update_cita_status,
     update_latest_cita_transferencia_estado,
 )
+from .mensaje_repository import (
+    CANAL_CHAT,
+    CANAL_META,
+    CANAL_TWILIO,
+    ROL_ASSISTANT,
+    ROL_USER,
+    log_mensaje,
+)
 
 __all__ = [
     "CITA_STATUS_ACTIVA",
@@ -30,4 +38,10 @@ __all__ = [
     "update_cita_fecha_hora_from_calendar",
     "update_cita_status",
     "update_latest_cita_transferencia_estado",
+    "log_mensaje",
+    "ROL_USER",
+    "ROL_ASSISTANT",
+    "CANAL_META",
+    "CANAL_TWILIO",
+    "CANAL_CHAT",
 ]

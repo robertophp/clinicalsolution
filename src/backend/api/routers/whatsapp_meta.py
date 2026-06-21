@@ -111,6 +111,7 @@ async def meta_whatsapp_webhook(request: Request) -> Response:
                     clinic_name=clinic.name,
                     assistant_name=clinic.assistant_name,
                     system_prompt_en=getattr(clinic, "system_prompt_en", None),
+                    channel="meta",
                 )
             except GeminiServiceError as e:
                 logging.warning("GeminiServiceError in Meta webhook: %s", e)

@@ -44,6 +44,7 @@ async def chat_json(
             clinic_name=clinic.name,
             assistant_name=clinic.assistant_name,
             system_prompt_en=getattr(clinic, "system_prompt_en", None),
+            channel="chat",
         )
     except GeminiServiceError as e:
         logging.warning("GeminiServiceError in /chat: %s", e)

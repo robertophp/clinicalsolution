@@ -10,7 +10,7 @@ from ..domain.runtime_env import (
     effective_bigquery_dataset,
     effective_firestore_database_id,
 )
-from .routers import chat, health, jobs, whatsapp_meta, whatsapp_twilio
+from .routers import chat, dashboard, health, jobs, whatsapp_meta, whatsapp_twilio
 from .startup_checks import validate_production_settings
 
 logger = logging.getLogger(__name__)
@@ -41,4 +41,5 @@ def create_app() -> FastAPI:
     app.include_router(whatsapp_twilio.router)
     app.include_router(whatsapp_meta.router)
     app.include_router(jobs.router)
+    app.include_router(dashboard.router)
     return app

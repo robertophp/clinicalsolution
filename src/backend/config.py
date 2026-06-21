@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     GEMINI_GENERATE_TIMEOUT_SECONDS: float = 60.0
     GEMINI_MAX_GENERATION_ATTEMPTS: int = 3  # primer intento + hasta 2 reintentos con backoff
 
+    # Dashboard de métricas: secreto para firmar la cookie de sesión (HMAC) y duración de la sesión.
+    # En producción DEBE definirse un valor fuerte; si está vacío, el login del dashboard queda deshabilitado.
+    DASHBOARD_SESSION_SECRET: Optional[str] = None
+    DASHBOARD_SESSION_TTL_MIN: int = 480  # 8 horas
+    # Cookie marcada Secure (solo HTTPS). En desarrollo local sin TLS, poner en false.
+    DASHBOARD_COOKIE_SECURE: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
