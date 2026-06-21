@@ -11,13 +11,16 @@ from typing import Any, Dict, List
 from .config import settings
 from .database import SessionLocal
 from .repositories import (
+    CANAL_META,
     CITA_STATUS_CANCELADA,
     CITA_STATUS_REAGENDADA,
+    ROL_USER,
     TRANSFERENCIA_ESTADO_PENDIENTE_RESUMEN,
     TRANSFERENCIA_ESTADO_TRANSFERIDO,
     create_cita,
     get_latest_activa_cita_for_phone,
     get_latest_cita_for_phone,
+    log_mensaje,
     update_cita_status,
     update_latest_cita_transferencia_estado,
 )
@@ -140,6 +143,7 @@ def _generate_and_persist_reply(
     clinic_name: str,
     assistant_name: str = "Asistente Virtual",
     system_prompt_en: str | None = None,
+    channel: str = CANAL_META,
 ) -> str:
     """
     Recupera historial, construye system instruction (clínica + primer mensaje vs conversacional),
@@ -148,6 +152,15 @@ def _generate_and_persist_reply(
     Si aplica la derivación a especialista humano, puede llamar a Gemini solo para clasificación/resumen
     y enviar WhatsApp al especialista de forma síncrona vía Graph API antes de responder al paciente.
     """
+    # Métrica de dashboard: registrar el mensaje entrante del paciente (solo metadatos, fail-open).
+    # Una fila por mensaje entrante => permite contar mensajes, personas únicas y ratio mensajes/cita.
+    log_mensaje(
+        clinic_id=clinic_id,
+        telefono=from_number,
+        rol=ROL_USER,
+        canal=channel,
+    )
+
     history = conversation_memory.get_recent_messages(clinic_id, from_number)
     is_first_message = len(history) == 0
 

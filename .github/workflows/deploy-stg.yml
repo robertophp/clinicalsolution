@@ -12,6 +12,7 @@
 #     GCP_RUN_SERVICE_ACCOUNT  email de la SA que ejecuta Cloud Run (Vertex, BQ, Firestore)
 #   Opcional (STG):
 #     INTERNAL_API_KEY         si no existe, /chat queda sin API key (válido con APP_ENV=development)
+#     DASHBOARD_SESSION_SECRET si no existe, el login del dashboard de métricas queda deshabilitado
 
 name: Deploy STG (Cloud Run)
 
@@ -67,6 +68,7 @@ jobs:
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
           INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+          DASHBOARD_SESSION_SECRET: ${{ secrets.DASHBOARD_SESSION_SECRET }}
           GCP_RUN_SERVICE_ACCOUNT: ${{ secrets.GCP_RUN_SERVICE_ACCOUNT }}
         run: |
           set -euo pipefail
@@ -81,6 +83,9 @@ jobs:
           ENV_VARS="${ENV_VARS},META_WEBHOOK_VERIFY_TOKEN=${META_WEBHOOK_VERIFY_TOKEN}"
           if [ -n "${INTERNAL_API_KEY}" ]; then
             ENV_VARS="${ENV_VARS},INTERNAL_API_KEY=${INTERNAL_API_KEY}"
+          fi
+          if [ -n "${DASHBOARD_SESSION_SECRET}" ]; then
+            ENV_VARS="${ENV_VARS},DASHBOARD_SESSION_SECRET=${DASHBOARD_SESSION_SECRET}"
           fi
 
           DEPLOY=(gcloud run deploy "${CLOUD_RUN_SERVICE}"

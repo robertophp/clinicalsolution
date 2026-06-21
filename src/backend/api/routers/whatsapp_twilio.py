@@ -66,6 +66,7 @@ async def whatsapp_webhook(
             clinic_name=clinic.name,
             assistant_name=clinic.assistant_name,
             system_prompt_en=getattr(clinic, "system_prompt_en", None),
+            channel="twilio",
         )
     except GeminiServiceError as e:
         logging.warning("GeminiServiceError in /whatsapp: %s", e)

@@ -35,4 +35,9 @@ def validate_production_settings() -> None:
                 "APP_ENV es producción con Meta WhatsApp: META_WEBHOOK_SKIP_SIGNATURE_VERIFY debe ser false."
             )
 
+    if not (settings.DASHBOARD_SESSION_SECRET or "").strip():
+        logging.warning(
+            "DASHBOARD_SESSION_SECRET no está definido: el login del dashboard de métricas estará deshabilitado."
+        )
+
     logging.info("Validación de arranque (APP_ENV=production): INTERNAL_API_KEY y Meta OK.")

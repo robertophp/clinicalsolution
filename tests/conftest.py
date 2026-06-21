@@ -9,3 +9,6 @@ os.environ.setdefault("PROJECT_ID", "test-project")
 os.environ.setdefault("LOCATION", "us-central1")
 os.environ.setdefault("INTERNAL_API_KEY", "test-internal-api-key")
 os.environ.setdefault("APP_ENV", "development")
+# Dashboard de métricas: secreto de sesión y cookie no-Secure para que el cliente de pruebas (http) la reenvíe.
+os.environ.setdefault("DASHBOARD_SESSION_SECRET", "test-dashboard-secret")
+os.environ.setdefault("DASHBOARD_COOKIE_SECURE", "false")
