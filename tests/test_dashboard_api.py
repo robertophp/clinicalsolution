@@ -20,6 +20,9 @@ async def test_dashboard_page_served(client: AsyncClient):
     res = await client.get("/dashboard")
     assert res.status_code == 200
     assert "Panel de Métricas" in res.text
+    assert "Personas escribiendo vs. Citas agendadas" in res.text
+    assert "Volumen de mensajes" in res.text
+    assert "monthSelect" in res.text
 
 
 @pytest.mark.asyncio

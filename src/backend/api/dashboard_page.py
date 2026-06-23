@@ -117,6 +117,9 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
     .table-scroll { max-height: 360px; overflow: auto; }
     .footnote { color: var(--muted); font-size: 12px; margin-top: 18px; line-height: 1.5; }
     .loading { color: var(--muted); font-size: 13px; }
+    .range-hint { font-size: 13px; color: var(--muted); margin: 0 0 18px; }
+    .panel-full { margin-bottom: 16px; }
+    select:disabled { opacity: 0.55; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -150,6 +153,8 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       </div>
       <div class="controls">
         <select id="yearSelect" title="Año"></select>
+        <select id="monthSelect" title="Mes"><option value="0">Todos los meses</option></select>
+        <select id="daySelect" title="Día" disabled><option value="0">Todos los días</option></select>
         <div class="seg" id="granSeg">
           <button data-g="day" class="active">Día</button>
           <button data-g="week">Semana</button>
@@ -160,12 +165,13 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
     </div>
 
     <div class="container">
+      <p class="range-hint" id="rangeHint">Mostrando: —</p>
       <div class="kpi-grid" id="kpiGrid"></div>
 
       <div class="panel-grid">
         <div class="panel">
-          <h3>Mensajes vs. Citas agendadas</h3>
-          <p class="sub">Cuántos pacientes escriben y cuántas citas se concretan en el período.</p>
+          <h3>Personas escribiendo vs. Citas agendadas</h3>
+          <p class="sub">Pacientes distintos que contactan la clínica y cuántas citas se concretan.</p>
           <div class="chart-box"><canvas id="tsChart"></canvas></div>
         </div>
         <div class="panel">
@@ -173,6 +179,13 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
           <p class="sub">Agendadas, canceladas y reagendadas.</p>
           <div class="chart-box sm"><canvas id="statusChart"></canvas></div>
         </div>
+      </div>
+
+      <div class="panel panel-full">
+        <h3>Volumen de mensajes</h3>
+        <p class="sub">Cuántas veces escribieron los pacientes (la misma persona puede enviar varios mensajes).</p>
+        <div class="chart-box sm"><canvas id="msgChart"></canvas></div>
+        <div id="msgEmpty" class="empty hidden">Sin mensajes en el período seleccionado.</div>
       </div>
 
       <div class="panel-grid">
@@ -206,18 +219,94 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       </div>
 
       <p class="footnote">
-        Las fechas usan la creación del evento (zona horaria de El Salvador). El ratio Msg/Cita
-        indica cuántos mensajes de pacientes se reciben por cada cita agendada. Las reagendaciones
-        hechas directamente en Google Calendar no se cuentan aquí.
+        Las fechas usan la creación del evento (zona horaria de El Salvador). Personas = teléfonos
+        distintos que escribieron. El ratio Msg/Cita indica cuántos mensajes se reciben por cada cita.
+        Las reagendaciones hechas directamente en Google Calendar no se cuentan aquí.
       </p>
     </div>
   </div>
 
   <script>
+    const MONTH_NAMES = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ];
     const state = { start: null, end: null, granularity: "day", detail: [] };
 
+    function pad2(n) { return String(n).padStart(2, "0"); }
     function fmt(n) { return (n === null || n === undefined) ? "-" : n.toLocaleString("es-SV"); }
     function fmtRatio(n) { return (n === null || n === undefined) ? "-" : n.toLocaleString("es-SV"); }
+    function daysInMonth(year, month1to12) { return new Date(year, month1to12, 0).getDate(); }
+
+    function populateMonthSelect() {
+      const sel = document.getElementById("monthSelect");
+      const prev = sel.value || "0";
+      sel.innerHTML = '<option value="0">Todos los meses</option>';
+      MONTH_NAMES.forEach((name, i) => {
+        const o = document.createElement("option");
+        o.value = String(i + 1);
+        o.textContent = name;
+        sel.appendChild(o);
+      });
+      sel.value = ["0"].concat(MONTH_NAMES.map((_, i) => String(i + 1))).includes(prev) ? prev : "0";
+    }
+
+    function populateDaySelect() {
+      const monthSel = document.getElementById("monthSelect");
+      const daySel = document.getElementById("daySelect");
+      const y = parseInt(document.getElementById("yearSelect").value, 10);
+      const m = parseInt(monthSel.value, 10);
+      const prevDay = daySel.value || "0";
+      daySel.innerHTML = '<option value="0">Todos los días</option>';
+      if (!m) {
+        daySel.disabled = true;
+        daySel.value = "0";
+        return;
+      }
+      daySel.disabled = false;
+      const max = daysInMonth(y, m);
+      for (let d = 1; d <= max; d++) {
+        const o = document.createElement("option");
+        o.value = String(d);
+        o.textContent = String(d);
+        daySel.appendChild(o);
+      }
+      daySel.value = (parseInt(prevDay, 10) >= 1 && parseInt(prevDay, 10) <= max) ? prevDay : "0";
+    }
+
+    function syncDateRange() {
+      const y = parseInt(document.getElementById("yearSelect").value, 10);
+      const m = parseInt(document.getElementById("monthSelect").value, 10);
+      const d = parseInt(document.getElementById("daySelect").value, 10);
+      if (!m) {
+        state.start = y + "-01-01";
+        state.end = y + "-12-31";
+      } else if (!d) {
+        const last = daysInMonth(y, m);
+        state.start = y + "-" + pad2(m) + "-01";
+        state.end = y + "-" + pad2(m) + "-" + pad2(last);
+      } else {
+        const iso = y + "-" + pad2(m) + "-" + pad2(d);
+        state.start = iso;
+        state.end = iso;
+      }
+      updateRangeHint();
+    }
+
+    function updateRangeHint() {
+      const y = parseInt(document.getElementById("yearSelect").value, 10);
+      const m = parseInt(document.getElementById("monthSelect").value, 10);
+      const d = parseInt(document.getElementById("daySelect").value, 10);
+      let text = "Mostrando: ";
+      if (!m) {
+        text += "todo " + y;
+      } else if (!d) {
+        text += MONTH_NAMES[m - 1] + " " + y;
+      } else {
+        text += d + " de " + MONTH_NAMES[m - 1] + " " + y;
+      }
+      document.getElementById("rangeHint").textContent = text;
+    }
 
     async function api(path, opts) {
       const res = await fetch(path, Object.assign({ credentials: "same-origin" }, opts || {}));
@@ -262,20 +351,36 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       });
     });
 
-    document.getElementById("yearSelect").addEventListener("change", (e) => {
-      const y = parseInt(e.target.value, 10);
-      state.start = y + "-01-01";
-      state.end = y + "-12-31";
+    document.getElementById("yearSelect").addEventListener("change", () => {
+      document.getElementById("monthSelect").value = "0";
+      populateDaySelect();
+      syncDateRange();
+      loadAll();
+    });
+
+    document.getElementById("monthSelect").addEventListener("change", () => {
+      populateDaySelect();
+      syncDateRange();
+      loadAll();
+    });
+
+    document.getElementById("daySelect").addEventListener("change", () => {
+      syncDateRange();
       loadAll();
     });
 
     document.getElementById("csvBtn").addEventListener("click", exportCsv);
 
-    let tsChart, statusChart, serviceChart;
+    let tsChart, statusChart, serviceChart, msgChart;
 
     function kpiCard(label, value, pill) {
       return '<div class="kpi"><div class="label"><span class="pill ' + pill + '"></span>' + label +
         '</div><div class="value">' + value + '</div></div>';
+    }
+
+    function personasPorCita(personas, citas) {
+      if (!citas || citas <= 0) return null;
+      return Math.round((personas / citas) * 100) / 100;
     }
 
     async function loadSummary() {
@@ -283,14 +388,16 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       if (res.status === 401) { showLogin(""); return; }
       const json = await res.json();
       const d = (json && json.data) || {};
+      const ppc = personasPorCita(d.personas_unicas || 0, d.agendadas || 0);
       document.getElementById("kpiGrid").innerHTML =
         kpiCard("Citas agendadas", fmt(d.agendadas), "p-brand") +
         kpiCard("Canceladas", fmt(d.canceladas), "p-red") +
         kpiCard("Reagendadas", fmt(d.reagendadas), "p-amber") +
         kpiCard("Derivaciones", fmt(d.derivaciones), "p-violet") +
-        kpiCard("Mensajes", fmt(d.mensajes_usuario), "p-green") +
         kpiCard("Personas únicas", fmt(d.personas_unicas), "p-muted") +
-        kpiCard("Msg por cita", fmtRatio(d.ratio_mensajes_por_cita), "p-brand");
+        kpiCard("Mensajes", fmt(d.mensajes_usuario), "p-green") +
+        kpiCard("Personas por cita", fmtRatio(ppc), "p-brand") +
+        kpiCard("Msg por cita", fmtRatio(d.ratio_mensajes_por_cita), "p-green");
       renderStatusChart(d);
     }
 
@@ -308,6 +415,49 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       });
     }
 
+    function renderMessagesChart(labels, mensajes) {
+      const ctx = document.getElementById("msgChart");
+      const empty = document.getElementById("msgEmpty");
+      if (msgChart) msgChart.destroy();
+      const total = mensajes.reduce((a, b) => a + b, 0);
+      if (!total) {
+        empty.classList.remove("hidden");
+        return;
+      }
+      empty.classList.add("hidden");
+      msgChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Mensajes",
+            data: mensajes,
+            backgroundColor: "rgba(24,169,116,0.75)",
+            borderRadius: 6,
+          }],
+        },
+        options: {
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                afterLabel: (ctx) => {
+                  const p = state.detail[ctx.dataIndex];
+                  if (p && p.personas > 0) {
+                    const mpp = Math.round((p.mensajes / p.personas) * 10) / 10;
+                    return "Prom. " + mpp + " msg/persona";
+                  }
+                  return "";
+                },
+              },
+            },
+          },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+      });
+    }
+
     async function loadTimeseries() {
       const res = await api("/dashboard/api/timeseries?start=" + state.start + "&end=" + state.end + "&granularity=" + state.granularity);
       if (res.status === 401) { showLogin(""); return; }
@@ -315,8 +465,9 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       const rows = (json && json.data) || [];
       state.detail = rows;
       const labels = rows.map((r) => r.period);
-      const mensajes = rows.map((r) => r.mensajes);
+      const personas = rows.map((r) => r.personas);
       const citas = rows.map((r) => r.citas);
+      const mensajes = rows.map((r) => r.mensajes);
       const ctx = document.getElementById("tsChart");
       if (tsChart) tsChart.destroy();
       tsChart = new Chart(ctx, {
@@ -324,8 +475,8 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
         data: {
           labels,
           datasets: [
-            { label: "Mensajes", data: mensajes, borderColor: "#18a974", backgroundColor: "rgba(24,169,116,.12)", fill: true, tension: .3, borderWidth: 2, pointRadius: 2 },
-            { label: "Citas", data: citas, borderColor: "#2f6fed", backgroundColor: "rgba(47,111,237,.12)", fill: true, tension: .3, borderWidth: 2, pointRadius: 2 },
+            { label: "Personas escribiendo", data: personas, borderColor: "#18a974", backgroundColor: "rgba(24,169,116,.12)", fill: true, tension: .3, borderWidth: 2, pointRadius: 2 },
+            { label: "Citas agendadas", data: citas, borderColor: "#2f6fed", backgroundColor: "rgba(47,111,237,.12)", fill: true, tension: .3, borderWidth: 2, pointRadius: 2 },
           ],
         },
         options: {
@@ -335,6 +486,7 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
           scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
         },
       });
+      renderMessagesChart(labels, mensajes);
       renderDetailTable(rows);
     }
 
@@ -399,8 +551,6 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
       if (res.status === 401 || res.status === 503) { showLogin(""); return; }
       const me = await res.json();
       document.getElementById("clinicName").textContent = me.clinic_name || "Clínica";
-      state.start = me.default_start;
-      state.end = me.default_end;
       const sel = document.getElementById("yearSelect");
       sel.innerHTML = "";
       (me.years || []).forEach((y) => {
@@ -408,6 +558,10 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
         o.value = y; o.textContent = y; sel.appendChild(o);
       });
       sel.value = String(new Date(me.default_start).getUTCFullYear());
+      populateMonthSelect();
+      document.getElementById("monthSelect").value = "0";
+      populateDaySelect();
+      syncDateRange();
       showApp();
       loadAll();
     }
