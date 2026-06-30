@@ -55,6 +55,51 @@ def test_system_prompt_contains_clinic_and_tools() -> None:
     assert "FORMATO DE RESPUESTA (WhatsApp)" in text
     assert "Máximo 3–4 líneas cortas" in text
     assert "beneficios resumidos en 1 frase natural" in text
+    assert "NUNCA digas que «no lo tenemos»" in text
+
+
+def test_first_message_prompt_requires_empathetic_greeting() -> None:
+    clinics = _clinics()
+    cfg = clinics["demo_clinic_1"]
+    text = build_conversation_system_prompt(
+        language="es",
+        clinic_id=cfg.id,
+        clinic_name=cfg.name,
+        assistant_name=cfg.assistant_name,
+        system_prompt=cfg.system_prompt,
+        system_prompt_en=cfg.system_prompt_en,
+        is_first_message=True,
+        stored_first_name=None,
+        stored_full_name=None,
+        clinics_by_id=clinics,
+        policies=CLINIC_POLICIES_BY_ID.get(cfg.id),
+        name_collection_phase="none",
+    )
+    assert f"Hola, soy {cfg.assistant_name}" in text
+    assert "con gusto te ayudo" in text
+    assert "¿en qué puedo ayudarte?" in text
+    assert "¿Con quién tengo el gusto?" in text
+
+
+def test_prompt_includes_last_discussed_service_name_not_id() -> None:
+    clinics = _clinics()
+    cfg = clinics["demo_clinic_1"]
+    text = build_conversation_system_prompt(
+        language="es",
+        clinic_id=cfg.id,
+        clinic_name=cfg.name,
+        assistant_name=cfg.assistant_name,
+        system_prompt=cfg.system_prompt,
+        system_prompt_en=cfg.system_prompt_en,
+        is_first_message=False,
+        stored_first_name=None,
+        stored_full_name=None,
+        clinics_by_id=clinics,
+        policies=CLINIC_POLICIES_BY_ID.get(cfg.id),
+        last_discussed_service_name="Limpieza dental",
+    )
+    assert "Limpieza dental" in text
+    assert "limpieza_dental" not in text.split("ÚLTIMO SERVICIO")[1][:200]
 
 
 def test_system_prompt_without_knowledge_base_omits_block() -> None:

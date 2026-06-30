@@ -68,6 +68,29 @@ async def test_clear_service_message_skips_llm_classifier_and_transfer(client, m
 
 
 @pytest.mark.asyncio
+async def test_ok_bye_reaches_gemini_not_guardrail(client):
+    memory = MagicMock()
+    memory.get_metadata.return_value = {}
+    memory.get_recent_messages.return_value = []
+    memory.add_message.return_value = None
+
+    with patch("backend.bootstrap.gemini_service") as mock_gemini, patch(
+        "backend.bootstrap.conversation_memory", memory
+    ), patch("backend.bootstrap.llm_classify_intent") as mock_llm_intent:
+        mock_gemini.generate_reply_with_tools.return_value = "¡Hasta luego!"
+        response = await client.post(
+            "/chat?clinic_id=demo_clinic_1",
+            json={"from_number": "+50370000002", "body": "ok bye"},
+            headers=INTERNAL_API_HEADERS,
+        )
+
+    assert response.status_code == 200
+    mock_llm_intent.assert_not_called()
+    assert "fuera de lo que puedo hacer" not in response.json()["reply"].lower()
+    mock_gemini.generate_reply_with_tools.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_out_of_domain_message_calls_llm_classifier(client, mock_memory):
     """Mensaje no reconocido por reglas: se consulta al clasificador LLM."""
     with patch("backend.bootstrap.gemini_service") as mock_gemini, patch(

@@ -91,7 +91,16 @@ from .domain.human_contact_signals import message_signals_human_contact_request
 from .domain.escalation_signals import message_signals_complaint_or_fiscal
 from .domain.urgency_signals import message_signals_urgency
 from .domain.urgency_calendar import _calendar_suffix_label_for_cita
-from .domain.wa_normalization import _normalize_wa_id_for_storage
+from .domain.catalog import _service_display_label, catalog_intent_keywords, catalog_intent_topics
+from .domain.cordales_requirement import (
+    classify_patient_xray_response,
+    message_signals_cordales_inquiry,
+)
+from .domain.patient_name_extraction import try_extract_patient_name
+from .domain.service_context import (
+    detect_discussed_service,
+    service_context_is_fresh,
+)
 
 # Asegurar que los logs (y tracebacks) se vean en la consola de uvicorn
 logging.basicConfig(
@@ -167,8 +176,12 @@ def _generate_and_persist_reply(
     # Metadata ligera: idioma de conversación y nombre del paciente (si ya se conoce)
     metadata = conversation_memory.get_metadata(clinic_id, from_number) or {}
     stored_first_name: str | None = None
+    name_collection_phase = "none"
     if isinstance(metadata, dict):
         stored_first_name = (metadata.get("patient_first_name") or None)  # Firestore
+        name_collection_phase = (metadata.get("name_collection_phase") or "none").strip()
+        if stored_first_name:
+            name_collection_phase = "known"
 
     # Si no tenemos nombre en memoria pero ya existen citas previas en BigQuery,
     # intentamos recuperar el nombre del paciente a partir del teléfono y la clínica.
@@ -231,6 +244,84 @@ def _generate_and_persist_reply(
     else:
         language = _detect_language(body)
         conversation_memory.set_conversation_language(clinic_id, from_number, language)
+
+    # Recolección de nombre del mensaje actual (fase asked o nombre en primer mensaje)
+    if not stored_first_name and name_collection_phase in {"asked", "none"}:
+        extracted_name = try_extract_patient_name(gemini_service, body, language)
+        if extracted_name:
+            try:
+                conversation_memory.set_patient_name(clinic_id, from_number, extracted_name)
+                stored_first_name = extracted_name.split()[0]
+                stored_first_name = stored_first_name[:1].upper() + stored_first_name[1:].lower()
+                name_collection_phase = "known"
+                if isinstance(metadata, dict):
+                    metadata = dict(metadata)
+                    metadata["patient_name"] = extracted_name
+                    metadata["patient_first_name"] = stored_first_name
+            except Exception:
+                pass
+        elif name_collection_phase == "asked":
+            try:
+                conversation_memory.set_name_collection_phase(clinic_id, from_number, "skipped")
+                name_collection_phase = "skipped"
+            except Exception:
+                pass
+
+    # Detectar servicio mencionado y persistir contexto
+    last_discussed_service_id: str | None = None
+    last_discussed_service_at = None
+    if isinstance(metadata, dict):
+        last_discussed_service_id = (metadata.get("last_discussed_service_id") or "").strip() or None
+        last_discussed_service_at = metadata.get("last_discussed_service_at")
+
+    detected_service = detect_discussed_service(body, clinic_id)
+    if detected_service:
+        try:
+            conversation_memory.set_last_discussed_service(clinic_id, from_number, detected_service)
+            last_discussed_service_id = detected_service
+            last_discussed_service_at = None  # recién actualizado
+        except Exception:
+            pass
+
+    last_discussed_service_name: str | None = None
+    if last_discussed_service_id and (detected_service or service_context_is_fresh(last_discussed_service_at)):
+        label = _service_display_label(clinic_id, last_discussed_service_id, language)
+        if label and label != last_discussed_service_id:
+            last_discussed_service_name = label
+
+    clinic_policies = CLINIC_POLICIES_BY_ID.get(clinic_id)
+    cordales_policy = (
+        clinic_policies.cordales_panoramic_requirement if clinic_policies else None
+    )
+    cordales_xray_phase = "none"
+    if isinstance(metadata, dict):
+        cordales_xray_phase = (metadata.get("cordales_xray_phase") or "none").strip()
+
+    cordales_flow_active = False
+    if cordales_policy and cordales_policy.enabled:
+        cordales_flow_active = message_signals_cordales_inquiry(
+            body,
+            cordales_policy,
+            last_discussed_service_id=last_discussed_service_id,
+        )
+        if cordales_flow_active and cordales_xray_phase == "asked":
+            xray_response = classify_patient_xray_response(body)
+            if xray_response == "has_panoramic":
+                try:
+                    conversation_memory.set_cordales_xray_phase(
+                        clinic_id, from_number, "has_panoramic"
+                    )
+                    cordales_xray_phase = "has_panoramic"
+                except Exception:
+                    pass
+            elif xray_response == "needs_at_clinic":
+                try:
+                    conversation_memory.set_cordales_xray_phase(
+                        clinic_id, from_number, "needs_at_clinic"
+                    )
+                    cordales_xray_phase = "needs_at_clinic"
+                except Exception:
+                    pass
 
     clinic_cfg = CLINICS_BY_ID.get(clinic_id)
 
@@ -432,6 +523,12 @@ def _generate_and_persist_reply(
     clinic_knowledge_base = getattr(clinic_cfg, "knowledge_base", None) if clinic_cfg else None
     clinic_topics = extract_knowledge_base_topics(clinic_knowledge_base)
     clinic_service_keywords = knowledge_base_service_keywords(clinic_knowledge_base)
+    catalog_keywords = catalog_intent_keywords(clinic_id)
+    merged_service_keywords = list(
+        dict.fromkeys([*clinic_service_keywords, *catalog_keywords])
+    )
+    catalog_topics = catalog_intent_topics(clinic_id)
+    merged_clinic_topics = list(dict.fromkeys([*clinic_topics, *catalog_topics]))
     # Reglas-primero: las reglas reconocen citas, servicios del catálogo y temas del manual.
     # Solo si las reglas NO reconocen el mensaje (OUT_OF_DOMAIN) consultamos al LLM, para no gastar
     # una llamada en los mensajes claros y, a la vez, no bloquear por error lo que las reglas no cubren.
@@ -440,7 +537,7 @@ def _generate_and_persist_reply(
             body,
             language,
             history,
-            extra_service_keywords=clinic_service_keywords,
+            extra_service_keywords=merged_service_keywords,
         )
     except Exception:
         intent = Intent.OUT_OF_DOMAIN
@@ -452,7 +549,7 @@ def _generate_and_persist_reply(
                 message=body,
                 language=language,
                 history=history,
-                clinic_topics=clinic_topics,
+                clinic_topics=merged_clinic_topics,
             )
         except Exception:
             intent = Intent.OUT_OF_DOMAIN
@@ -598,6 +695,10 @@ def _generate_and_persist_reply(
         stored_full_name=stored_full_name_for_prompt,
         clinics_by_id=CLINICS_BY_ID,
         policies=CLINIC_POLICIES_BY_ID.get(clinic_id),
+        name_collection_phase=name_collection_phase if not stored_first_name else "known",
+        last_discussed_service_name=last_discussed_service_name,
+        cordales_flow_active=cordales_flow_active,
+        cordales_xray_phase=cordales_xray_phase,
     )
 
     chat_history = _build_chat_history_with_memory(clinic_id, from_number, body)
@@ -676,6 +777,7 @@ def _generate_and_persist_reply(
             language=language,
             clinic_id=clinic_id,
             default_patient_name=default_patient_name,
+            last_discussed_service_id=last_discussed_service_id,
         )
         if pending_extracted:
             try:
@@ -686,6 +788,20 @@ def _generate_and_persist_reply(
                 )
             except Exception:
                 logging.warning("No se pudo guardar booking_pending en Firestore", exc_info=True)
+
+    # Tras primer mensaje sin nombre: marcar que ya se pidió el nombre
+    if is_first_message and not stored_first_name and name_collection_phase == "none":
+        try:
+            conversation_memory.set_name_collection_phase(clinic_id, from_number, "asked")
+        except Exception:
+            pass
+
+    # Flujo cordales: tras primera respuesta con pregunta obligatoria, marcar fase asked
+    if cordales_flow_active and cordales_xray_phase == "none":
+        try:
+            conversation_memory.set_cordales_xray_phase(clinic_id, from_number, "asked")
+        except Exception:
+            pass
 
     conversation_memory.add_message(clinic_id, from_number, "user", body)
     conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)

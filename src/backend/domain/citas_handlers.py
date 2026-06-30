@@ -18,7 +18,8 @@ from . import availability
 from .calendar_retry import _retry_delete_event_async
 from .catalog import _service_display_label
 from .clinics_state import get_clinics_by_id
-from .urgency_calendar import _calendar_suffix_label_for_cita
+from .clinic_loader import CLINIC_POLICIES_BY_ID
+from .cordales_requirement import cordal_extraction_blocked_message
 
 if TYPE_CHECKING:
     from ..services.conversation_memory import ConversationMemoryService
@@ -34,6 +35,34 @@ def set_conversation_memory_for_cita_handlers(svc: ConversationMemoryService) ->
 def _cm() -> ConversationMemoryService:
     assert _conversation_memory is not None
     return _conversation_memory
+
+
+def _format_booking_success_message(
+    *,
+    language: str,
+    fecha: str,
+    hora: str,
+    servicio_label: str,
+    clinic_address: str | None,
+) -> str:
+    """Mensaje de confirmación post-agendar; incluye dirección completa con saltos de línea si está configurada."""
+    if language == "en":
+        confirm = (
+            f"Done! I've scheduled your appointment for {fecha} at {hora} "
+            f"(service: {servicio_label})."
+        )
+        location_intro = "Don't forget we're located at"
+    else:
+        confirm = (
+            f"¡Listo! He agendado tu cita para el {fecha} a las {hora} "
+            f"(servicio: {servicio_label})."
+        )
+        location_intro = "No olvides que estamos ubicados en"
+
+    address = (clinic_address or "").strip()
+    if not address:
+        return confirm
+    return f"{confirm}\n\n{location_intro} {address} 😉"
 
 
 def _handle_agendar_cita(
@@ -55,6 +84,17 @@ def _handle_agendar_cita(
     fecha = (args.get("fecha") or "").strip()
     hora = (args.get("hora") or "").strip()
     servicio = (args.get("servicio") or "").strip()
+    policies = CLINIC_POLICIES_BY_ID.get(clinic_id)
+    cordales_policy = policies.cordales_panoramic_requirement if policies else None
+    if (
+        cordales_policy
+        and cordales_policy.enabled
+        and cordales_policy.block_direct_cordal_booking
+        and servicio in set(cordales_policy.target_service_ids)
+    ):
+        msg = cordal_extraction_blocked_message(language)
+        return {"error": "Extracción cordal bloqueada", "mensaje": msg}
+
     if not all([nombre, fecha, hora, servicio]):
         if language == "en":
             msg = "I couldn't schedule the appointment: name, date, time or service type are missing. Please confirm all details, including the type of appointment (e.g. cleaning, check-up)."
@@ -199,10 +239,14 @@ def _handle_agendar_cita(
                 db.add(cita)
                 db.commit()
         servicio_label = _service_display_label(clinic_id, servicio, language)
-        if language == "en":
-            mensaje = f"Done! I've scheduled your appointment for {fecha} at {hora} (service: {servicio_label})."
-        else:
-            mensaje = f"¡Listo! He agendado tu cita para el {fecha} a las {hora} (servicio: {servicio_label})."
+        clinic_address = getattr(clinic_cfg, "clinic_address", None) if clinic_cfg else None
+        mensaje = _format_booking_success_message(
+            language=language,
+            fecha=fecha,
+            hora=hora,
+            servicio_label=servicio_label,
+            clinic_address=clinic_address,
+        )
         return {"mensaje": mensaje}
     except Exception as e:
         logging.warning("Error agendando cita: %s", e)

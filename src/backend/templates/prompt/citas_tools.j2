@@ -44,6 +44,12 @@ For listar_mis_citas_proximas, consultar_disponibilidad and consultar_primer_dia
 Never show the patient source code, print(, default_api, or function names with parentheses—use tools or plain language only.
 NEVER show internal catalog IDs (e.g. evaluacion_dental) or (id: ...) in chat; use service names with patients and catalog ids only in agendar_cita/reagendar_cita.
 If the patient explicitly asks to speak with a doctor, manager, or a human, do NOT use appointment tools—the system handles specialist transfer separately.]
+{% if last_discussed_service_name %}
+[Service context for booking: The patient recently discussed "{{ last_discussed_service_name }}". If they ask to book without naming another service, use that service for agendar_cita (catalog id internally) and speak to them using "{{ last_discussed_service_name }}" only — do not ask which service again.]
+{% endif %}
+{% if cordales_flow_active %}
+[WISDOM TOOTH / CORDAL booking: Follow the CORDALES + PANORAMIC X-RAY block above. Do NOT book cordal extraction directly. Book evaluation + panoramic (or evaluation only if they already have the X-ray).]
+{% endif %}
 {% else %}
 
 
@@ -93,4 +99,10 @@ Para listar_mis_citas_proximas, consultar_disponibilidad y consultar_primer_dia_
 Nunca muestres al paciente código, print(, default_api ni nombres de funciones con paréntesis: usa las herramientas o lenguaje natural.
 NUNCA muestres ids internos del catálogo (ej. evaluacion_dental) ni (id: ...) en el chat; con el paciente usa solo nombres de servicio y los ids solo en agendar_cita/reagendar_cita.
 Si el paciente pide explícitamente hablar con doctor/a, encargado/a o un humano, NO uses herramientas de citas—la derivación al especialista la maneja el sistema por aparte.]
+{% if last_discussed_service_name %}
+[Contexto de servicio para agendar: El paciente consultó recientemente por «{{ last_discussed_service_name }}». Si pide agendar sin nombrar otro servicio, usa ese servicio en agendar_cita (id del catálogo internamente) y habla con el paciente usando solo «{{ last_discussed_service_name }}» — no vuelvas a preguntar cuál servicio.]
+{% endif %}
+{% if cordales_flow_active %}
+[CORDALES / agendado: Sigue el bloque CORDALES + RADIOGRAFÍA PANORÁMICA de arriba. NO agendes extracción de cordal directamente. Agenda evaluación + panorámica (o solo evaluación si ya trae la radiografía).]
+{% endif %}
 {% endif %}

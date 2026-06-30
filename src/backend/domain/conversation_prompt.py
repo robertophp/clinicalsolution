@@ -16,6 +16,7 @@ from jinja2 import Environment, FileSystemLoader
 from ..schemas.clinic import ClinicConfig
 from ..schemas.clinic_policies import BookingPromptPolicies, ClinicPolicies
 from .catalog import _format_services_catalog_for_prompt, _services_for_clinic
+from .cordales_requirement import format_cordales_panoramic_prompt_block
 from .prompt_clinic import (
     _format_clinic_location_for_prompt,
     _format_clinic_phone_for_prompt,
@@ -54,7 +55,13 @@ def _booking_policies(policies: ClinicPolicies | None) -> BookingPromptPolicies:
     return policies.booking if policies else BookingPromptPolicies()
 
 
-def build_citas_tool_instruction(language: str, policies: ClinicPolicies | None = None) -> str:
+def build_citas_tool_instruction(
+    language: str,
+    policies: ClinicPolicies | None = None,
+    *,
+    last_discussed_service_name: str | None = None,
+    cordales_flow_active: bool = False,
+) -> str:
     """Bloque de instrucciones para las seis herramientas de citas (EN / ES), con textos de confirmación configurables."""
     b = _booking_policies(policies)
     confirmation_es = (b.confirmation_example_es or _DEFAULT_CONFIRMATION_ES).strip()
@@ -63,6 +70,8 @@ def build_citas_tool_instruction(language: str, policies: ClinicPolicies | None 
         language=(language or "").strip(),
         confirmation_example_es=confirmation_es,
         confirmation_example_en=confirmation_en,
+        last_discussed_service_name=(last_discussed_service_name or "").strip() or None,
+        cordales_flow_active=cordales_flow_active,
     )
 
 
@@ -79,6 +88,10 @@ def build_conversation_system_prompt(
     stored_full_name: str | None,
     clinics_by_id: Mapping[str, ClinicConfig],
     policies: ClinicPolicies | None = None,
+    name_collection_phase: str = "none",
+    last_discussed_service_name: str | None = None,
+    cordales_flow_active: bool = False,
+    cordales_xray_phase: str = "none",
 ) -> str:
     """
     Construye el system prompt completo para un turno de conversación con herramientas de citas.
@@ -122,7 +135,7 @@ def build_conversation_system_prompt(
     if stored_first_name:
         identidad_paciente = (
             f" También conoces al paciente: su primer nombre es {stored_first_name}. "
-            f"Salúdalo solo por su primer nombre ({stored_first_name}) y NO vuelvas a pedirle su nombre."
+            f"Puedes usar su primer nombre ({stored_first_name}) en el cuerpo de la respuesta, pero NO como apertura del saludo."
         )
         if stored_full_name and len(stored_full_name.split()) > 1:
             identidad_paciente += (
@@ -134,11 +147,45 @@ def build_conversation_system_prompt(
             identidad_paciente += (
                 f" Cuando agende una cita para este mismo paciente (sin decir que es para otro), usa \"{stored_first_name}\" en la herramienta y no preguntes el nombre."
             )
+    elif name_collection_phase == "asked":
+        identidad_paciente = (
+            " Ya pediste el nombre al paciente en el turno anterior y NO obtuviste respuesta clara. "
+            "NO vuelvas a pedir el nombre en mensajes generales; continúa ayudándole con lo que pregunte. "
+            "Solo vuelve a pedir el nombre si va a agendar una cita y aún no lo tienes."
+        )
+    elif name_collection_phase == "skipped":
+        identidad_paciente = (
+            " El paciente no compartió su nombre cuando se lo pediste. NO insistas pidiendo el nombre "
+            "salvo que vaya a agendar una cita y aún no lo tengas registrado."
+        )
+    elif is_first_message:
+        identidad_paciente = (
+            " Todavía no conoces el nombre del paciente. En esta primera respuesta, después de atender su consulta "
+            "(o invitarlo a contarte qué necesita), pídele su nombre UNA sola vez de forma empática "
+            "(ej. «¿Con quién tengo el gusto?» o «¿Me compartes tu nombre para atenderte mejor?»)."
+        )
     else:
         identidad_paciente = (
             " Si todavía no conoces el nombre del paciente, puedes preguntarlo una sola vez de forma natural "
             "y luego recuerda ese nombre para el resto de la conversación."
         )
+
+    service_context_block = ""
+    if last_discussed_service_name:
+        if language == "en":
+            service_context_block = (
+                f"\n\n[LAST DISCUSSED SERVICE: The patient recently asked about \"{last_discussed_service_name}\". "
+                f"If they want to book an appointment without naming a different service, use \"{last_discussed_service_name}\" "
+                "for this booking — mention the service by this readable name only, never catalog ids. "
+                "Do NOT ask again which service they want unless they explicitly change topic or request another service.]"
+            )
+        else:
+            service_context_block = (
+                f"\n\n[ÚLTIMO SERVICIO CONSULTADO: El paciente preguntó recientemente por \"{last_discussed_service_name}\". "
+                f"Si quiere agendar una cita sin nombrar otro servicio, usa \"{last_discussed_service_name}\" "
+                "para esta reserva — menciona el servicio solo por este nombre legible, nunca ids del catálogo. "
+                "NO vuelvas a preguntar qué servicio quiere salvo que cambie de tema o pida otro servicio explícitamente.]"
+            )
 
     env = _prompt_env()
     identity_line = "\n\n" + env.get_template("identity_extra.j2").render(
@@ -161,7 +208,7 @@ def build_conversation_system_prompt(
     else:
         base_prompt = system_prompt
 
-    system_prompt_effective = base_prompt.strip() + referencia_fecha + identity_line
+    system_prompt_effective = base_prompt.strip() + referencia_fecha + identity_line + service_context_block
 
     clinic_cfg = clinics_by_id.get(clinic_id)
     if clinic_cfg is not None:
@@ -195,6 +242,21 @@ def build_conversation_system_prompt(
         system_prompt_effective = system_prompt_effective + "\n\n" + kb_block.strip() + "\n"
 
     # Catálogo y manual antes del bloque de dolor/urgencia (prioridad citas y precios).
-    system_prompt_effective = system_prompt_effective.strip() + build_citas_tool_instruction(language, policies)
+    system_prompt_effective = system_prompt_effective.strip() + build_citas_tool_instruction(
+        language,
+        policies,
+        last_discussed_service_name=last_discussed_service_name,
+        cordales_flow_active=cordales_flow_active,
+    )
     system_prompt_effective = system_prompt_effective + _format_urgency_dolor_prompt_block(language)
+
+    cordales_policy = policies.cordales_panoramic_requirement if policies else None
+    if cordales_flow_active and cordales_policy and cordales_policy.enabled:
+        system_prompt_effective += format_cordales_panoramic_prompt_block(
+            language=language,
+            clinic_id=clinic_id,
+            policy=cordales_policy,
+            cordales_xray_phase=cordales_xray_phase,  # type: ignore[arg-type]
+        )
+
     return system_prompt_effective
