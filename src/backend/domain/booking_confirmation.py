@@ -139,6 +139,7 @@ def extract_pending_booking_from_conversation(
     language: str,
     clinic_id: str,
     default_patient_name: str,
+    last_discussed_service_id: str | None = None,
 ) -> dict[str, str] | None:
     """
     Extrae nombre, fecha, hora y servicio (id catálogo) del hilo cuando el asistente pidió confirmación.
@@ -161,12 +162,17 @@ def extract_pending_booking_from_conversation(
         if (s.get("id") or "").strip()
     ]
     sample_ids = ", ".join(svc_ids[:40])
+    service_hint = ""
+    sid_hint = (last_discussed_service_id or "").strip()
+    if sid_hint and sid_hint in svc_ids:
+        service_hint = f"\nIf the patient did not name a different service, prefer catalog id: {sid_hint!r}\n"
     use_en = (language or "").strip().lower().startswith("en")
     if use_en:
         instructions = (
             "From this WhatsApp thread, extract the appointment the assistant asked the patient to confirm.\n"
             f"Default patient name if missing in thread: {default_patient_name!r}\n"
             f"Service must be one of these catalog ids (pick the best match): {sample_ids}\n"
+            f"{service_hint}"
             "Reply with ONE JSON object only, no markdown:\n"
             '{"nombre": "...", "fecha": "YYYY-MM-DD", "hora": "HH:00", "servicio": "catalog_id", '
             '"suffix_urgencia": null or "dolor_post_cita" or "dolor_intenso"}\n'
@@ -177,6 +183,7 @@ def extract_pending_booking_from_conversation(
             "Del hilo WhatsApp, extrae la cita que el asistente pidió confirmar al paciente.\n"
             f"Nombre del paciente por defecto si falta: {default_patient_name!r}\n"
             f"El servicio debe ser un id de este catálogo (elige el más adecuado): {sample_ids}\n"
+            f"{service_hint}"
             "Responde SOLO un objeto JSON, sin markdown:\n"
             '{"nombre": "...", "fecha": "YYYY-MM-DD", "hora": "HH:00", "servicio": "id_catalogo", '
             '"suffix_urgencia": null o "dolor_post_cita" o "dolor_intenso"}\n'

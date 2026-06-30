@@ -132,6 +132,14 @@ class ConversationMemoryService:
             metadata["booking_phase"] = data.get("booking_phase")
         if "booking_pending" in data:
             metadata["booking_pending"] = data.get("booking_pending")
+        if "name_collection_phase" in data:
+            metadata["name_collection_phase"] = data.get("name_collection_phase")
+        if "last_discussed_service_id" in data:
+            metadata["last_discussed_service_id"] = data.get("last_discussed_service_id")
+        if "last_discussed_service_at" in data:
+            metadata["last_discussed_service_at"] = _parse_timestamp(data.get("last_discussed_service_at"))
+        if "cordales_xray_phase" in data:
+            metadata["cordales_xray_phase"] = data.get("cordales_xray_phase")
         return metadata
 
     def add_message(
@@ -222,6 +230,89 @@ class ConversationMemoryService:
             {
                 "patient_name": name,
                 "patient_first_name": first_name_norm,
+                "name_collection_phase": "known",
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_name_collection_phase(
+        self,
+        clinic_id: str,
+        from_number: str,
+        phase: str,
+    ) -> None:
+        """Marca el estado de recolección de nombre: none | asked | known | skipped."""
+        p = (phase or "").strip()
+        if p not in {"none", "asked", "known", "skipped"}:
+            return
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "name_collection_phase": p,
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_last_discussed_service(
+        self,
+        clinic_id: str,
+        from_number: str,
+        service_id: str,
+    ) -> None:
+        """Persiste el último servicio consultado (id interno del catálogo)."""
+        sid = (service_id or "").strip()
+        if not sid:
+            return
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "last_discussed_service_id": sid,
+                "last_discussed_service_at": now,
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def clear_last_discussed_service(self, clinic_id: str, from_number: str) -> None:
+        """Limpia el contexto de servicio consultado."""
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "last_discussed_service_id": "",
+                "last_discussed_service_at": None,
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_cordales_xray_phase(
+        self,
+        clinic_id: str,
+        from_number: str,
+        phase: str,
+    ) -> None:
+        """Marca el estado del flujo cordales + radiografía panorámica."""
+        p = (phase or "").strip()
+        if p not in {"none", "asked", "has_panoramic", "needs_at_clinic"}:
+            return
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "cordales_xray_phase": p,
                 "updated_at": now,
                 "clinic_id": clinic_id,
                 "from_number": from_number,

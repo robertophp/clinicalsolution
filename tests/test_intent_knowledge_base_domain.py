@@ -63,11 +63,12 @@ def test_keywords_include_treatment_terms_with_and_without_accents():
 
 def test_rules_classifier_uses_extra_keywords_for_invisalign():
     kws = knowledge_base_service_keywords(SAMPLE_KB)
-    # Sin keywords del manual: "invisalign" no se reconoce -> out_of_domain.
-    assert classify_intent("¿hacen invisalign?", "es") is Intent.OUT_OF_DOMAIN
-    # Con keywords del manual: pasa a servicios (dentro de dominio).
+    # "invisalign" está en el núcleo dental → servicios sin manual.
+    assert classify_intent("¿hacen invisalign?", "es") is Intent.SERVICIOS
+    # Término solo del manual (laminados) requiere extra keywords.
+    assert classify_intent("me interesa laminados", "es") is Intent.OUT_OF_DOMAIN
     assert (
-        classify_intent("¿hacen invisalign?", "es", extra_service_keywords=kws)
+        classify_intent("me interesa laminados", "es", extra_service_keywords=kws)
         is Intent.SERVICIOS
     )
 

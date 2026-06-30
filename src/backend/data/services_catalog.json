@@ -1278,7 +1278,10 @@
       "currency": "USD",
       "status": "available",
       "aliases": [
-        "recubrimiento pulpar (pieza)"
+        "recubrimiento pulpar (pieza)",
+        "biodentine",
+        "biodentín",
+        "recubrimiento pulpar biodentine"
       ],
       "clinic_id": "demo_clinic_1"
     },

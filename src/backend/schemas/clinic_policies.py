@@ -10,6 +10,48 @@ class BookingPromptPolicies(BaseModel):
     confirmation_example_en: str | None = None
 
 
+class CordalesPanoramicRequirementPolicies(BaseModel):
+    """
+  Requisito de radiografía panorámica para extracción de cordales.
+  Configurable por clínica en ``policies.json``.
+  """
+
+    enabled: bool = False
+    trigger_terms: list[str] = Field(
+        default_factory=lambda: [
+            "cordal",
+            "cordales",
+            "muela del juicio",
+            "muelas del juicio",
+            "tercer molar",
+            "terceros molares",
+            "wisdom tooth",
+            "wisdom teeth",
+        ]
+    )
+    target_service_ids: list[str] = Field(default_factory=lambda: ["exodoncia_de_cordal_piezas"])
+    evaluation_with_xray_service_id: str = "evaluacion_radiografia_panoramica"
+    evaluation_only_service_id: str = "evaluacion"
+    standalone_xray_service_id: str = "radiografia_panoramica"
+    mandatory_question_es: str | None = (
+        "¿Ya cuentas con tu radiografía panorámica, o te gustaría que agendemos una cita de "
+        "evaluación inicial para tomártela aquí en la clínica con nuestro equipo radiológico?"
+    )
+    mandatory_question_en: str | None = (
+        "Do you already have a panoramic X-ray, or would you like us to schedule an initial "
+        "evaluation appointment to take it here at the clinic with our radiology team?"
+    )
+    reminder_if_has_xray_es: str | None = (
+        "Recuerda traer tu radiografía panorámica el día de la cita."
+    )
+    reminder_if_has_xray_en: str | None = (
+        "Please remember to bring your panoramic X-ray on the day of your appointment."
+    )
+    offer_if_no_xray_es: str | None = None
+    offer_if_no_xray_en: str | None = None
+    block_direct_cordal_booking: bool = True
+
+
 class ClinicPolicies(BaseModel):
     """Políticas y ajustes de prompt por clínica (archivo `policies.json`)."""
 
@@ -17,3 +59,6 @@ class ClinicPolicies(BaseModel):
     human_transfer_topic_keys: list[str] | None = None
     transfer_topics_file: str | None = None
     booking: BookingPromptPolicies = Field(default_factory=BookingPromptPolicies)
+    cordales_panoramic_requirement: CordalesPanoramicRequirementPolicies = Field(
+        default_factory=CordalesPanoramicRequirementPolicies
+    )

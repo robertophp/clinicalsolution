@@ -53,6 +53,7 @@ Recomendación técnica: `IF` el paciente pregunta por costos de radiografías o
 ## **4\. RECUBRIMIENTO PULPAR (BIODENTINE)**
 
 **Definición:** El Biodentine se usa en caries profundas de manera preventiva para proteger el nervio y ayudar a regenerar la dentina, así evitar endodoncias en algunos casos. Se requiere de diagnóstico previo y pruebas pulpares.  
+**Precio referencial:** El recubrimiento pulpar (Biodentine) tiene un costo de **USD 145.00** por pieza. La restauración posterior se cotiza aparte según el caso (ver FAQ).  
 **Beneficios:**
 
 * Evitar endodoncias y extracciones innecesarias.  
@@ -95,6 +96,7 @@ Recomendación técnica **:** `IF` un paciente muestra resistencia o miedo hacia
 * **¿Cuántos días de recuperación debo de tener?** Son 3 días de recuperación según lo indicado por Dra.  
 * **¿Qué debo de hacer después de una extracción?** Se recomienda tener una dieta blanda por 3 días, toma de analgésicos y antibióticos.  
 * **¿Cuándo se realiza la extracción?** La extracción se realiza cuando la pieza ya no tiene oportunidad de salvarla con endodoncias por fracturas verticales internas, periodontitis avanzada, o lesiones muy avanzadas en la pieza.
+* **¿Necesito radiografía panorámica para extracción de cordales (muelas del juicio)?** Sí, es obligatoria. Si ya la tienes, debes traerla el día de tu cita de evaluación. Si no la tienes, podemos tomártela aquí en la clínica en una cita de evaluación inicial con nuestro equipo radiológico (contamos con centro de imágenes propio con equipo alemán).
 
 ## **7\. BLANQUEAMIENTO DENTAL**
 

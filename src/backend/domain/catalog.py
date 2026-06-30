@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -36,12 +38,12 @@ def _format_services_catalog_for_prompt(services: List[Dict[str, Any]], language
         return ""
     eval_services = [s for s in services if s.get("is_evaluation") is True]
     lines = [
-        "\n\n[CATÁLOGO DE SERVICIOS – Prioridad: responde precios y citas con este catálogo ANTES de escalar a humano.]",
+        "\n\n[CATÁLOGO DE SERVICIOS – Usa catálogo Y manual de la clínica para precios y alcance; responde antes de escalar a humano.]",
         "Servicios disponibles (id | nombre | precio | evaluación | estado):",
     ]
     if language == "en":
         lines[0] = (
-            "\n\n[SERVICES CATALOG – Priority: answer prices and booking from this catalog BEFORE escalating to a human.]"
+            "\n\n[SERVICES CATALOG – Use catalog AND clinic knowledge base for prices and scope; answer before escalating to a human.]"
         )
         lines[1] = "Available services (id | name | price | evaluation | status):"
     for s in services:
@@ -65,6 +67,12 @@ def _format_services_catalog_for_prompt(services: List[Dict[str, Any]], language
             "prioritize offering an evaluation appointment from the evaluation=yes rows. "
             "Do NOT escalate to a human for routine price + pain questions when the service is in this catalog."
         )
+        lines.append(
+            "The clinic knowledge base also describes treatments we offer; if the patient uses a commercial name "
+            "(e.g. Biodentine) and the catalog uses another (e.g. pulp capping), treat it as the same service: "
+            "answer from the manual and catalog/manual price. NEVER deny a treatment listed in the knowledge base "
+            "only because the exact name is missing from this list."
+        )
     else:
         lines.append(
             "Si el usuario pregunta precio o un servicio de esta lista, indica el precio del catálogo con empatía. "
@@ -74,6 +82,12 @@ def _format_services_catalog_for_prompt(services: List[Dict[str, Any]], language
             "Si menciona dolor o pide revisión/consulta sin un servicio concreto no evaluación, prioriza ofrecer "
             "cita de evaluación (filas evaluación=sí). "
             "NO derives a humano por preguntas rutinarias de precio + dolor si el servicio está en catálogo."
+        )
+        lines.append(
+            "El manual de la clínica (base de conocimiento) también describe tratamientos que SÍ ofrecemos; "
+            "si el paciente usa un nombre comercial (ej. Biodentine) y en catálogo figura otro (ej. Recubrimiento pulpar), "
+            "trátalo como el mismo servicio: responde con la info del manual y el precio del catálogo o manual. "
+            "NUNCA niegues un tratamiento que esté en el manual solo porque no encuentras el nombre exacto en esta lista."
         )
     if eval_services:
         eval_ids = ", ".join((s.get("id") or "") for s in eval_services[:12])
@@ -136,3 +150,68 @@ def _service_display_label(clinic_id: str, service_id: str, language: str) -> st
             return (s.get("name_en") or s.get("name") or sid).strip()
         return (s.get("name") or s.get("name_en") or sid).strip()
     return sid
+
+
+def catalog_intent_keywords(clinic_id: str) -> list[str]:
+    """
+    Keywords derivados del catálogo de servicios (nombres, aliases y tokens significativos)
+    para el clasificador de intención por reglas. Matching acento-insensible en el clasificador.
+    """
+    _catalog_stopwords = {
+        "dental",
+        "dentales",
+        "completa",
+        "completo",
+        "parcial",
+        "simple",
+        "general",
+        "unitario",
+        "unitaria",
+    }
+    keywords: list[str] = []
+    seen: set[str] = set()
+
+    def _add(raw: str) -> None:
+        term = (raw or "").strip().lower()
+        if len(term) < 3:
+            return
+        base = "".join(
+            c for c in unicodedata.normalize("NFD", term) if unicodedata.category(c) != "Mn"
+        )
+        if base in _catalog_stopwords:
+            return
+        for variant in (term, base):
+            if variant and variant not in seen:
+                seen.add(variant)
+                keywords.append(variant)
+
+    for svc in _services_for_clinic(clinic_id):
+        for field in ("name", "name_en"):
+            name = (svc.get(field) or "").strip()
+            if name:
+                _add(name)
+                for token in re.split(r"[^0-9A-Za-zÁÉÍÓÚáéíóúÜüÑñ]+", name):
+                    if len(token) >= 4:
+                        _add(token)
+        for alias in svc.get("aliases") or []:
+            _add(str(alias))
+        sid = (svc.get("id") or "").strip()
+        for token in sid.split("_"):
+            if len(token) >= 4:
+                _add(token.replace("_", " "))
+
+    return keywords
+
+
+def catalog_intent_topics(clinic_id: str, *, limit: int = 60) -> list[str]:
+    """Nombres legibles del catálogo para el clasificador LLM de intención."""
+    topics: list[str] = []
+    seen: set[str] = set()
+    for svc in _services_for_clinic(clinic_id):
+        name = (svc.get("name") or svc.get("name_en") or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            topics.append(name)
+        if len(topics) >= limit:
+            break
+    return topics
