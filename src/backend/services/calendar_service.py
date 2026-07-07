@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date as date_type
 from datetime import datetime, timedelta, time as time_type, timezone
 from typing import Any, Optional
@@ -9,6 +10,8 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from ..database import Cita
+from ..domain.cita_beneficiary import cita_attendee_display_name, cita_contact_display_name, cita_es_para_tercero
+from ..domain.beneficiary_age import parse_beneficiario_edad_arg
 
 
 CALENDAR_TIMEZONE = "America/El_Salvador"
@@ -74,33 +77,60 @@ class CalendarService:
         start_dt = datetime.combine(cita.fecha_cita, cita.hora_cita)
         end_dt = start_dt + timedelta(minutes=60)
 
-        paciente = (cita.paciente_nombre or "Paciente sin nombre").strip()
+        attendee = cita_attendee_display_name(cita)
         razon = (cita.razon_cita or "Servicio sin especificar").strip()
         servicio_label = (servicio_display or "").strip() or razon
         telefono = (cita.telefono or "Sin teléfono").strip()
         clinic_id = (cita.clinic_id or "sin_clinica").strip()
+        es_tercero = cita_es_para_tercero(cita)
+        contacto = cita_contact_display_name(cita)
 
         suf = (calendar_suffix or "").strip()
-        if suf:
-            summary_raw = f"Cita: {paciente} – {servicio_label} – {suf}"
+        # Edad del beneficiario: BQ (fuente de verdad) o sufijo menor_X_anios
+        stored_age = getattr(cita, "beneficiario_edad", None)
+        minor_age_from_cita = parse_beneficiario_edad_arg(stored_age)
+
+        minor_age_match = re.match(
+            r"^menor[_\s](\d{1,2})[_\s]a(?:n|ñ)io?s?$", suf, re.IGNORECASE
+        ) if suf else None
+        if minor_age_from_cita is not None:
+            minor_age_label = f"menor_{minor_age_from_cita}_anios"
+            suf_for_summary = ""
+        elif minor_age_match:
+            minor_age_label = f"menor_{minor_age_match.group(1)}_anios"
+            suf_for_summary = ""
         else:
-            summary_raw = f"Cita: {paciente} – {servicio_label}"
+            minor_age_label = None
+            suf_for_summary = suf
+
+        if suf_for_summary:
+            summary_raw = f"Cita: {attendee} – {servicio_label} – {suf_for_summary}"
+        else:
+            summary_raw = f"Cita: {attendee} – {servicio_label}"
         summary = CalendarService._truncate_calendar_summary(summary_raw)
 
         description_lines = [
             f"Clínica: {clinic_name} (ID: {clinic_id})",
-            f"Paciente: {paciente}",
+            f"Paciente (asiste): {attendee}",
+        ]
+        if minor_age_label:
+            if minor_age_from_cita is not None:
+                age_num = str(minor_age_from_cita)
+            else:
+                age_num = minor_age_match.group(1)  # type: ignore[union-attr]
+            description_lines.append(f"Paciente menor de edad ({age_num} años)")
+        if es_tercero:
+            description_lines.append("Agendado para tercero: sí")
+            if contacto:
+                description_lines.append(f"Contacto WhatsApp: {contacto}")
+        description_lines.extend([
             f"Teléfono: {telefono}",
             f"Servicio (catálogo): {razon}",
             f"Etiqueta en agenda: {servicio_label}",
             "",
             f"Agendado por: Asistente WhatsApp {assistant_name}",
             "Doctor asignado: (pendiente)",
-            "",
-            "IMPORTANTE: Esta cita fue agendada por el asistente de WhatsApp.",
-            "No modificarla directamente desde el calendario.",
-            "Cualquier cambio (reagendar o cancelar) debe hacerse por WhatsApp.",
-        ]
+        ])
 
         event = {
             "summary": summary,

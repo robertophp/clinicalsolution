@@ -405,6 +405,10 @@ def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language
             "beyond catalog. The 'especialidades' and 'casos_medicos_complejos' topics apply ONLY when the treatment is "
             "outside the offered list — never escalate a simple info/price question about a treatment we offer."
         )
+        chunks.append(
+            "Maxillofacial / maxilo: informational or price questions → requires_human_transfer=false (catalog). "
+            "Maxillofacial appointment or availability → dedicated direct-transfer flow; do NOT use especialidades topic."
+        )
     else:
         chunks.append(
             "Los precios de servicios están en el CATÁLOGO del prompt del asistente; "
@@ -431,6 +435,10 @@ def _build_transfer_resolution_context(clinic_cfg: ClinicConfig | None, language
             "queja grave; temas fiscales; especialidad fuera de alcance del catálogo. Los temas 'especialidades' y "
             "'casos_medicos_complejos' aplican SOLO cuando el tratamiento está fuera de la lista ofrecida — nunca derives "
             "una simple pregunta de información/precio por un tratamiento que sí ofrecemos."
+        )
+        chunks.append(
+            "Maxilofacial / maxilo: preguntas informativas o de precio → requires_human_transfer=false (catálogo). "
+            "Cita u horarios maxilofaciales → flujo dedicado del sistema (derivación directa), NO usar tema especialidades."
         )
     return "\n\n".join(chunks) if chunks else ""
 

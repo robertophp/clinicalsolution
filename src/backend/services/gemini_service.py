@@ -249,14 +249,28 @@ AGENDAR_CITA_DECLARATION = FunctionDeclaration(
         "NUNCA digas al paciente que la cita quedó guardada o agendada en el sistema sin haber llamado antes a esta función y recibido su resultado. "
         "Nunca para el mismo día: la cita debe ser a partir de mañana en hora de El Salvador (UTC-6), no hoy. "
         "La fecha y hora deben pasarse en formato normalizado: fecha como YYYY-MM-DD y hora como HH:00 (solo horas en punto, citas de 60 minutos). "
-        "El parámetro 'servicio' debe ser el ID del servicio según el catálogo de servicios que tienes en contexto (ej. limpieza, revision, extraccion). "
-        "Opcional suffix_urgencia (solo con servicio=evaluacion en flujos de dolor): dolor_post_cita o dolor_intenso, para el título en Google Calendar. "
+        "nombre en agendar_cita es SIEMPRE el nombre completo de quien ASISTE (beneficiario). "
+        "es_para_tercero=true si la cita es para otra persona (ej. madre, hijo); entonces nombre=nombre del beneficiario "
+        "y nombre_titular opcional si conoces al contacto del WhatsApp. es_para_tercero=false si la cita es para quien escribe. "
+        "Al iniciar agendamiento, pregunta si la cita es para el contacto o para otra persona si no quedó claro. "
+        "Opcional suffix_urgencia: en flujos de dolor (solo con servicio=evaluacion) usa dolor_post_cita o dolor_intenso. Para citas de menores de edad usa menor_X_anios (ej. menor_8_anios) con cualquier servicio, para que el calendario indique la edad del paciente. "
         "Si el usuario pregunta por precios, responde con la información del catálogo sin llamar esta función."
     ),
     parameters={
         "type": "object",
         "properties": {
-            "nombre": {"type": "string", "description": "Nombre completo del paciente"},
+            "nombre": {
+                "type": "string",
+                "description": "Nombre completo del beneficiario (quien asistirá a la cita).",
+            },
+            "es_para_tercero": {
+                "type": "boolean",
+                "description": "true si la cita es para otra persona distinta al contacto del WhatsApp; false si es para el titular.",
+            },
+            "nombre_titular": {
+                "type": "string",
+                "description": "Opcional. Nombre del titular del WhatsApp cuando es_para_tercero=true y se conoce.",
+            },
             "fecha": {"type": "string", "description": "Fecha de la cita en formato YYYY-MM-DD (ej. 2025-03-15). Debes convertir fechas en lenguaje natural a este formato."},
             "hora": {
                 "type": "string",
@@ -265,7 +279,11 @@ AGENDAR_CITA_DECLARATION = FunctionDeclaration(
             "servicio": {"type": "string", "description": "ID del servicio según el catálogo (ej. limpieza, revision, extraccion, evaluacion). Debe coincidir con un id del catálogo. No uses evaluacion salvo dolor/urgencia ya descritos o evaluación pedida y confirmada por el paciente; si solo dio día/hora, pregunta primero qué servicio quiere."},
             "suffix_urgencia": {
                 "type": "string",
-                "description": "Opcional. Solo con servicio=evaluacion en urgencia/dolor: dolor_post_cita (dolor posprocedimiento o tras visita) o dolor_intenso (dolor fuerte sin atarlo a procedimiento reciente). Omítelo en citas normales.",
+                "description": "Opcional. En urgencia/dolor (servicio=evaluacion): dolor_post_cita o dolor_intenso. Para citas de menores de edad (cualquier servicio): menor_X_anios (ej. menor_8_anios, menor_6_anios). Omítelo en citas normales de adultos.",
+            },
+            "beneficiario_edad": {
+                "type": "integer",
+                "description": "Opcional. Edad en años del beneficiario cuando es_para_tercero=true (ej. 6 para un niño de 6 años). El sistema también la detecta del chat si ya la mencionaron.",
             },
         },
         "required": ["nombre", "fecha", "hora", "servicio"],

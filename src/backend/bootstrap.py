@@ -19,7 +19,7 @@ from .repositories import (
     TRANSFERENCIA_ESTADO_TRANSFERIDO,
     create_cita,
     get_latest_activa_cita_for_phone,
-    get_latest_cita_for_phone,
+    get_latest_self_cita_for_phone,
     log_mensaje,
     update_cita_status,
     update_latest_cita_transferencia_estado,
@@ -30,7 +30,10 @@ from .services.intent_classifier import (
     Intent,
     classify_intent,
     extract_knowledge_base_topics,
+    is_contextual_offer_acceptance,
     knowledge_base_service_keywords,
+    should_fail_open_after_offer_reconfirm,
+    should_reconfirm_after_booking_offer,
 )
 from .services.intent_llm_service import llm_classify_intent
 from .services.calendar_sync_service import run_calendar_to_bigquery_sync
@@ -59,6 +62,7 @@ from .services.meta_whatsapp_service import (
 from .services.whatsapp_media_replies import reply_for_meta_media_type, reply_for_twilio_media
 
 from .domain.conversation_prompt import build_conversation_system_prompt
+from .domain.booking_beneficiary import build_booking_beneficiary_hint
 from .domain.booking_confirmation import (
     assistant_asks_booking_confirm,
     classify_booking_confirm_response,
@@ -66,6 +70,7 @@ from .domain.booking_confirmation import (
     normalize_pending_booking_args,
     patient_prompt_booking_declined,
     patient_prompt_booking_unclear,
+    patient_prompt_offer_response_unclear,
 )
 from .domain.citas_handlers import (
     _handle_agendar_cita,
@@ -96,7 +101,21 @@ from .domain.cordales_requirement import (
     classify_patient_xray_response,
     message_signals_cordales_inquiry,
 )
-from .domain.patient_name_extraction import try_extract_patient_name
+from .domain.pediatric_policy import (
+    PediatricAgeResult,
+    classify_pediatric_context,
+)
+from .domain.maxillofacial_policy import (
+    MaxillofacialContextResult,
+    classify_maxillofacial_context,
+    patient_prompt_maxillofacial_followup,
+    patient_prompt_maxillofacial_transfer_sent,
+)
+from .domain.patient_name_extraction import (
+    assistant_asked_for_name,
+    try_extract_name_correction,
+    try_extract_patient_name,
+)
 from .domain.service_context import (
     detect_discussed_service,
     service_context_is_fresh,
@@ -189,7 +208,7 @@ def _generate_and_persist_reply(
         try:
             db = SessionLocal()
             try:
-                cita = get_latest_cita_for_phone(db, clinic_id=clinic_id, telefono=from_number)
+                cita = get_latest_self_cita_for_phone(db, clinic_id=clinic_id, telefono=from_number)
             finally:
                 db.close()
             if cita and (cita.paciente_nombre or "").strip():
@@ -213,7 +232,7 @@ def _generate_and_persist_reply(
             try:
                 db = SessionLocal()
                 try:
-                    cita = get_latest_cita_for_phone(db, clinic_id=clinic_id, telefono=from_number)
+                    cita = get_latest_self_cita_for_phone(db, clinic_id=clinic_id, telefono=from_number)
                     if cita and (cita.paciente_nombre or "").strip():
                         full_bq = cita.paciente_nombre.strip()
                         if len(full_bq.split()) > 1:
@@ -244,6 +263,50 @@ def _generate_and_persist_reply(
     else:
         language = _detect_language(body)
         conversation_memory.set_conversation_language(clinic_id, from_number, language)
+
+    maxillo_followup_phase = (
+        (metadata.get("maxillofacial_transfer_phase") or "none").strip()
+        if isinstance(metadata, dict)
+        else "none"
+    )
+    if maxillo_followup_phase == "awaiting_followup":
+        reply_text = patient_prompt_maxillofacial_followup(language)
+        try:
+            conversation_memory.clear_maxillofacial_transfer(clinic_id, from_number)
+        except Exception:
+            logging.warning("No se pudo limpiar maxillofacial_transfer_phase", exc_info=True)
+        conversation_memory.add_message(clinic_id, from_number, "user", body)
+        conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+        return reply_text
+
+    name_just_corrected = False
+
+    # Corrección de nombre cuando ya hay uno guardado (typo, nombre completo, etc.)
+    if stored_first_name:
+        stored_full_for_correction = (
+            (metadata.get("patient_name") or "").strip() if isinstance(metadata, dict) else ""
+        )
+        corrected_name = try_extract_name_correction(
+            gemini_service,
+            body,
+            language,
+            stored_name=stored_full_for_correction or stored_first_name,
+            stored_first_name=stored_first_name,
+        )
+        if corrected_name:
+            try:
+                conversation_memory.set_patient_name(clinic_id, from_number, corrected_name)
+                parts = corrected_name.split()
+                fn = parts[0] if parts else corrected_name
+                stored_first_name = fn[:1].upper() + fn[1:].lower()
+                name_collection_phase = "known"
+                name_just_corrected = True
+                if isinstance(metadata, dict):
+                    metadata = dict(metadata)
+                    metadata["patient_name"] = corrected_name
+                    metadata["patient_first_name"] = stored_first_name
+            except Exception:
+                pass
 
     # Recolección de nombre del mensaje actual (fase asked o nombre en primer mensaje)
     if not stored_first_name and name_collection_phase in {"asked", "none"}:
@@ -323,6 +386,37 @@ def _generate_and_persist_reply(
                 except Exception:
                     pass
 
+    pediatric_policy = (
+        clinic_policies.pediatric_age_policy if clinic_policies else None
+    )
+    pediatric_result: PediatricAgeResult | None = None
+    if pediatric_policy and pediatric_policy.enabled:
+        pediatric_result = classify_pediatric_context(body, pediatric_policy)
+        if (
+            pediatric_result.is_pediatric
+            and pediatric_result.mentioned_age is not None
+            and pediatric_result.age_eligible is not False
+        ):
+            try:
+                conversation_memory.set_beneficiario_edad(
+                    clinic_id, from_number, pediatric_result.mentioned_age
+                )
+            except Exception:
+                logging.warning(
+                    "No se pudo guardar beneficiario_edad en Firestore",
+                    exc_info=True,
+                )
+
+    maxillofacial_result: MaxillofacialContextResult | None = None
+    maxillo_policy = clinic_policies.maxillofacial_policy if clinic_policies else None
+    if maxillo_policy and maxillo_policy.enabled:
+        maxillofacial_result = classify_maxillofacial_context(
+            body,
+            history,
+            maxillo_policy,
+            last_discussed_service_id=last_discussed_service_id,
+        )
+
     clinic_cfg = CLINICS_BY_ID.get(clinic_id)
 
     # --- Derivación a especialista: confirmación del resumen (antes de guardrails de dominio) ---
@@ -344,7 +438,7 @@ def _generate_and_persist_reply(
             phone_nid = resolve_whatsapp_phone_number_id_for_specialist(clinic_cfg)
 
             stored_full_name_tr = (metadata.get("patient_name") or "").strip() if isinstance(metadata, dict) else ""
-            patient_name_tr = stored_full_name_tr or (stored_first_name or "").strip() or "Paciente"
+            patient_name_tr = stored_full_name_tr or (stored_first_name or "").strip() or "No indicado"
 
             specialist_body = build_specialist_derivation_message(
                 patient_name=patient_name_tr,
@@ -542,6 +636,18 @@ def _generate_and_persist_reply(
     except Exception:
         intent = Intent.OUT_OF_DOMAIN
 
+    if intent is Intent.OUT_OF_DOMAIN and is_contextual_offer_acceptance(body, history):
+        intent = Intent.CITA
+
+    if intent is Intent.OUT_OF_DOMAIN and should_reconfirm_after_booking_offer(body, history):
+        reply_text = patient_prompt_offer_response_unclear(
+            language,
+            service_name=last_discussed_service_name,
+        )
+        conversation_memory.add_message(clinic_id, from_number, "user", body)
+        conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+        return reply_text
+
     if intent is Intent.OUT_OF_DOMAIN:
         try:
             intent = llm_classify_intent(
@@ -553,6 +659,12 @@ def _generate_and_persist_reply(
             )
         except Exception:
             intent = Intent.OUT_OF_DOMAIN
+
+    if intent is Intent.OUT_OF_DOMAIN and should_fail_open_after_offer_reconfirm(body, history):
+        intent = Intent.CITA
+
+    if name_just_corrected and intent is Intent.OUT_OF_DOMAIN:
+        intent = Intent.SMALL_TALK
 
     if intent is Intent.OUT_OF_DOMAIN:
         if language == "en":
@@ -570,6 +682,105 @@ def _generate_and_persist_reply(
         conversation_memory.add_message(clinic_id, from_number, "user", body)
         conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
         return reply_text
+
+    # --- Maxilofacial: derivación directa sin confirmación de resumen (cita / horarios) ---
+    if (
+        maxillofacial_result
+        and maxillofacial_result.is_active
+        and maxillofacial_result.intent == "booking"
+        and clinic_cfg
+    ):
+        spec_digits = parse_specialist_whatsapp_recipient(
+            getattr(clinic_cfg, "specialist_whatsapp", None)
+        )
+        if not spec_digits:
+            reply_text = patient_prompt_transfer_not_configured(language)
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
+        try:
+            conversation_memory.clear_booking_pending(clinic_id, from_number)
+        except Exception:
+            pass
+        detection = HumanTransferDetection(
+            matched_topics=("maxilofacial",),
+            brief_reason=(
+                "Maxillofacial appointment or availability request"
+                if language == "en"
+                else "Solicitud de cita u horarios de cirugía maxilofacial"
+            ),
+        )
+        summary = generate_transfer_summary(
+            gemini_service,
+            history=history,
+            current_message=body,
+            language=language,
+            detection=detection,
+        )
+        token = (settings.META_WHATSAPP_ACCESS_TOKEN or "").strip()
+        phone_nid = resolve_whatsapp_phone_number_id_for_specialist(clinic_cfg)
+        stored_full_name_tr = (metadata.get("patient_name") or "").strip() if isinstance(metadata, dict) else ""
+        patient_name_tr = stored_full_name_tr or (stored_first_name or "").strip() or "No indicado"
+        specialist_body = build_specialist_derivation_message(
+            patient_name=patient_name_tr,
+            patient_phone_display=format_patient_phone_display(from_number),
+            summary=summary,
+        )
+        sent_ok = False
+        if token and phone_nid:
+            try:
+                send_text_message_sync(
+                    graph_version=settings.META_GRAPH_API_VERSION,
+                    phone_number_id=phone_nid,
+                    to_wa_id=spec_digits,
+                    body=specialist_body,
+                    access_token=token,
+                )
+                sent_ok = True
+                logging.info(
+                    "Derivación maxilofacial enviada clinic=%s to=%s phone_number_id=%s",
+                    clinic_id,
+                    spec_digits,
+                    phone_nid,
+                )
+            except Exception:
+                logging.exception(
+                    "Error enviando derivación maxilofacial (clinic=%s to=%s)",
+                    clinic_id,
+                    spec_digits,
+                )
+        conversation_memory.add_message(clinic_id, from_number, "user", body)
+        if sent_ok:
+            try:
+                conversation_memory.set_maxillofacial_awaiting_followup(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo marcar maxillofacial awaiting_followup", exc_info=True)
+            try:
+                db = SessionLocal()
+                try:
+                    update_latest_cita_transferencia_estado(
+                        db,
+                        clinic_id=clinic_id,
+                        telefono=from_number,
+                        estado=TRANSFERENCIA_ESTADO_TRANSFERIDO,
+                    )
+                finally:
+                    db.close()
+            except Exception:
+                logging.warning("BigQuery transferencia_estado maxilofacial no actualizado", exc_info=True)
+            reply_text = patient_prompt_maxillofacial_transfer_sent(language)
+        else:
+            reply_text = patient_prompt_transfer_send_failed(language)
+        conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+        return reply_text
+
+    maxillofacial_info_active = bool(
+        maxillofacial_result
+        and maxillofacial_result.is_active
+        and maxillofacial_result.intent == "info"
+    )
+    skip_transfer_for_maxillo_info = maxillofacial_info_active
 
     # --- Derivación a especialista: detección de tema sensible (solo si hay número de especialista) ---
     # Contacto humano explícito → derivación (prioridad sobre urgencia/dolor; no agendar citas).
@@ -613,6 +824,7 @@ def _generate_and_persist_reply(
         and not skip_transfer_detection
         and not skip_transfer_for_urgency
         and not skip_transfer_for_clear_intent
+        and not skip_transfer_for_maxillo_info
     ):
         spec_digits = parse_specialist_whatsapp_recipient(getattr(clinic_cfg, "specialist_whatsapp", None))
         if spec_digits:
@@ -683,6 +895,16 @@ def _generate_and_persist_reply(
     if isinstance(metadata, dict):
         stored_full_name_for_prompt = (metadata.get("patient_name") or "").strip() or None
 
+    require_name_before_booking = (
+        intent in (Intent.CITA, Intent.SEGUIMIENTO_CITA) and not stored_first_name
+    )
+
+    booking_beneficiary_hint = build_booking_beneficiary_hint(
+        body,
+        language=language,
+        stored_first_name=stored_first_name,
+    )
+
     system_prompt_effective = build_conversation_system_prompt(
         language=language,
         clinic_id=clinic_id,
@@ -699,6 +921,11 @@ def _generate_and_persist_reply(
         last_discussed_service_name=last_discussed_service_name,
         cordales_flow_active=cordales_flow_active,
         cordales_xray_phase=cordales_xray_phase,
+        require_name_before_booking=require_name_before_booking,
+        booking_beneficiary_hint=booking_beneficiary_hint,
+        name_just_corrected=name_just_corrected,
+        pediatric_result=pediatric_result,
+        maxillofacial_info_active=maxillofacial_info_active,
     )
 
     chat_history = _build_chat_history_with_memory(clinic_id, from_number, body)
@@ -765,7 +992,7 @@ def _generate_and_persist_reply(
         reply_text = fallback_ask_explicit_confirm(language)
 
     stored_full_name_for_pending = (metadata.get("patient_name") or "").strip() if isinstance(metadata, dict) else ""
-    default_patient_name = stored_full_name_for_pending or (stored_first_name or "").strip() or "Paciente"
+    default_patient_name = stored_full_name_for_pending or (stored_first_name or "").strip()
     if (
         not mutation_tool_saved_ok["value"]
         and assistant_asks_booking_confirm(reply_text)
@@ -776,7 +1003,7 @@ def _generate_and_persist_reply(
             assistant_confirmation_message=reply_text,
             language=language,
             clinic_id=clinic_id,
-            default_patient_name=default_patient_name,
+            default_patient_name=default_patient_name or None,
             last_discussed_service_id=last_discussed_service_id,
         )
         if pending_extracted:
@@ -789,8 +1016,8 @@ def _generate_and_persist_reply(
             except Exception:
                 logging.warning("No se pudo guardar booking_pending en Firestore", exc_info=True)
 
-    # Tras primer mensaje sin nombre: marcar que ya se pidió el nombre
-    if is_first_message and not stored_first_name and name_collection_phase == "none":
+    # Marcar fase asked solo si el asistente realmente preguntó el nombre en este turno.
+    if not stored_first_name and name_collection_phase == "none" and assistant_asked_for_name(reply_text):
         try:
             conversation_memory.set_name_collection_phase(clinic_id, from_number, "asked")
         except Exception:

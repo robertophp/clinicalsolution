@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..database import Cita
@@ -58,7 +59,7 @@ def create_cita(
     db: Session,
     *,
     clinic_id: str,
-    paciente_nombre: str,
+    paciente_nombre: str | None,
     telefono: str,
     fecha: str,
     hora: str,
@@ -66,15 +67,41 @@ def create_cita(
     status: str | None = None,
     origen_reserva: str | None = None,
     agendado_por: str | None = None,
+    nombre_secundario: str | None = None,
+    es_para_tercero: bool = False,
+    beneficiario_edad: int | None = None,
 ) -> Cita:
     """
     Inserta una cita en BigQuery (tabla clinica_datos.citas).
-    Por defecto status=activa. Esquema: paciente_nombre, telefono, fecha_cita (DATE), hora_cita (TIME), razon_cita (servicio), clinica_id, status, creado_en.
+
+    ``paciente_nombre``: titular del teléfono en la fila (nombre completo si cita propia).
+    ``nombre_secundario``: beneficiario cuando ``es_para_tercero`` es true.
+    ``beneficiario_edad``: edad en años del beneficiario (pediátrico / tercero).
     """
     dt = _parse_fecha_hora(fecha, hora)
+    titular = (paciente_nombre or "").strip() or None
+    secundario = (nombre_secundario or "").strip() or None
+    if es_para_tercero:
+        if not secundario:
+            raise ValueError("nombre_secundario es obligatorio cuando es_para_tercero=true")
+    elif not titular:
+        titular = "Sin nombre"
+
+    edad: int | None = None
+    if es_para_tercero and beneficiario_edad is not None:
+        try:
+            edad_val = int(beneficiario_edad)
+            if 0 <= edad_val <= 18:
+                edad = edad_val
+        except (TypeError, ValueError):
+            edad = None
+
     cita = Cita(
         clinic_id=clinic_id,
-        paciente_nombre=(paciente_nombre or "").strip() or "Sin nombre",
+        paciente_nombre=titular,
+        nombre_secundario=secundario,
+        es_para_tercero=bool(es_para_tercero),
+        beneficiario_edad=edad,
         telefono=(telefono or "").strip() or "Sin teléfono",
         fecha_cita=dt.date(),
         hora_cita=dt.time(),
@@ -118,6 +145,32 @@ def get_latest_cita_for_phone(
     return (
         db.query(Cita)
         .filter(Cita.clinic_id == clinic_id, Cita.telefono == tel)
+        .order_by(Cita.timestamp.desc())
+        .first()
+    )
+
+
+def get_latest_self_cita_for_phone(
+    db: Session,
+    *,
+    clinic_id: str,
+    telefono: str,
+) -> Cita | None:
+    """
+    Cita más reciente agendada para el titular (no para tercero).
+    Usada para backfill del nombre de contacto en Firestore.
+    """
+    tel = (telefono or "").strip()
+    if not tel:
+        return None
+
+    return (
+        db.query(Cita)
+        .filter(
+            Cita.clinic_id == clinic_id,
+            Cita.telefono == tel,
+            or_(Cita.es_para_tercero.is_(False), Cita.es_para_tercero.is_(None)),
+        )
         .order_by(Cita.timestamp.desc())
         .first()
     )

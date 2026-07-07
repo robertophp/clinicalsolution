@@ -17,6 +17,8 @@ from ..schemas.clinic import ClinicConfig
 from ..schemas.clinic_policies import BookingPromptPolicies, ClinicPolicies
 from .catalog import _format_services_catalog_for_prompt, _services_for_clinic
 from .cordales_requirement import format_cordales_panoramic_prompt_block
+from .maxillofacial_policy import format_maxillofacial_info_prompt_block
+from .pediatric_policy import PediatricAgeResult, format_pediatric_prompt_block
 from .prompt_clinic import (
     _format_clinic_location_for_prompt,
     _format_clinic_phone_for_prompt,
@@ -92,6 +94,11 @@ def build_conversation_system_prompt(
     last_discussed_service_name: str | None = None,
     cordales_flow_active: bool = False,
     cordales_xray_phase: str = "none",
+    require_name_before_booking: bool = False,
+    booking_beneficiary_hint: str | None = None,
+    name_just_corrected: bool = False,
+    pediatric_result: PediatricAgeResult | None = None,
+    maxillofacial_info_active: bool = False,
 ) -> str:
     """
     Construye el system prompt completo para un turno de conversación con herramientas de citas.
@@ -134,18 +141,52 @@ def build_conversation_system_prompt(
 
     if stored_first_name:
         identidad_paciente = (
-            f" También conoces al paciente: su primer nombre es {stored_first_name}. "
-            f"Puedes usar su primer nombre ({stored_first_name}) en el cuerpo de la respuesta, pero NO como apertura del saludo."
+            f" Conoces al contacto de este WhatsApp (titular): su primer nombre es {stored_first_name}. "
+            f"Usa {stored_first_name} para saludar en el cuerpo de la respuesta, pero NO como apertura del saludo. "
+            "Este nombre es del titular del teléfono, NO necesariamente de quien asiste a una cita."
         )
         if stored_full_name and len(stored_full_name.split()) > 1:
             identidad_paciente += (
-                f" Cuando el usuario pida agendar una cita y NO diga que es para otra persona, la cita es para este paciente: "
-                f"usa DIRECTAMENTE el nombre completo \"{stored_full_name}\" en la herramienta agendar_cita y NUNCA preguntes el nombre. "
-                "Solo pregunta el nombre completo si el usuario indica explícitamente que la cita es para otra persona (ej. mi esposa, mi hijo, etc.)."
+                f" Al agendar para el titular (cita propia), usa es_para_tercero=false, nombre=\"{stored_full_name}\". "
+                "Si la cita es para otra persona, pregunta el nombre completo del beneficiario, usa es_para_tercero=true "
+                "y nombre=<beneficiario>; nombre_titular opcional con el titular si lo conoces."
             )
         else:
             identidad_paciente += (
-                f" Cuando agende una cita para este mismo paciente (sin decir que es para otro), usa \"{stored_first_name}\" en la herramienta y no preguntes el nombre."
+                f" Al agendar para el titular, usa es_para_tercero=false y \"{stored_first_name}\" en nombre si aplica. "
+                "Si es para otra persona, pide el nombre del beneficiario y usa es_para_tercero=true."
+            )
+        if name_just_corrected:
+            if language == "en":
+                identidad_paciente += (
+                    f"\n\n[NAME CORRECTION — this turn only: The patient just corrected their name to "
+                    f"{stored_first_name!r}. Briefly confirm you updated it "
+                    f"(e.g. \"Perfect, {stored_first_name}, I've updated your name.\") then continue helping. "
+                    "Use only the new name; do not use the previous one.]"
+                )
+            else:
+                identidad_paciente += (
+                    f"\n\n[CORRECCIÓN DE NOMBRE — solo este turno: El paciente acaba de corregir su nombre a "
+                    f"{stored_first_name!r}. Confirma brevemente que lo actualizaste "
+                    f"(ej. «Perfecto {stored_first_name}, he actualizado tu nombre.») y continúa ayudándole. "
+                    "Usa solo el nombre nuevo; no repitas el anterior.]"
+                )
+    elif require_name_before_booking:
+        if language == "en":
+            identidad_paciente = (
+                " You do NOT know the contact's name and they want to book. "
+                "MANDATORY: Ask whether the appointment is for themselves or someone else. "
+                "If for themselves, ask their full name. If for someone else, ask the beneficiary's full name only. "
+                "Use es_para_tercero accordingly. "
+                "Do NOT call booking tools until you have the beneficiary name."
+            )
+        else:
+            identidad_paciente = (
+                " NO conoces el nombre del contacto y quiere agendar. "
+                "OBLIGATORIO: Pregunta si la cita es para él/ella o para otra persona. "
+                "Si es para sí mismo/a, pide su nombre completo. Si es para otra persona, pide solo el nombre completo del beneficiario. "
+                "Usa es_para_tercero según corresponda. "
+                "NO llames herramientas de citas hasta tener el nombre del beneficiario."
             )
     elif name_collection_phase == "asked":
         identidad_paciente = (
@@ -166,9 +207,13 @@ def build_conversation_system_prompt(
         )
     else:
         identidad_paciente = (
-            " Si todavía no conoces el nombre del paciente, puedes preguntarlo una sola vez de forma natural "
-            "y luego recuerda ese nombre para el resto de la conversación."
+            " Si no conoces el nombre del contacto, NO uses «Paciente» ni placeholders genéricos. "
+            "Puedes preguntarlo una sola vez de forma natural cuando encaje. "
+            "Al agendar, pregunta si la cita es para el titular o para otra persona."
         )
+
+    if booking_beneficiary_hint:
+        identidad_paciente += f"\n{booking_beneficiary_hint}"
 
     service_context_block = ""
     if last_discussed_service_name:
@@ -257,6 +302,22 @@ def build_conversation_system_prompt(
             clinic_id=clinic_id,
             policy=cordales_policy,
             cordales_xray_phase=cordales_xray_phase,  # type: ignore[arg-type]
+        )
+
+    pediatric_policy = policies.pediatric_age_policy if policies else None
+    if pediatric_result and pediatric_result.is_pediatric and pediatric_policy and pediatric_policy.enabled:
+        system_prompt_effective += format_pediatric_prompt_block(
+            language=language,
+            policy=pediatric_policy,
+            result=pediatric_result,
+        )
+
+    maxillo_policy = policies.maxillofacial_policy if policies else None
+    if maxillofacial_info_active and maxillo_policy and maxillo_policy.enabled:
+        system_prompt_effective += format_maxillofacial_info_prompt_block(
+            language=language,
+            clinic_id=clinic_id,
+            policy=maxillo_policy,
         )
 
     return system_prompt_effective

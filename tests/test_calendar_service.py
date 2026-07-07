@@ -111,6 +111,8 @@ def test_build_event_payload_includes_suffix_in_summary():
     cita.fecha_cita = date(2026, 6, 1)
     cita.hora_cita = time(10, 0)
     cita.paciente_nombre = "María Pérez"
+    cita.nombre_secundario = None
+    cita.es_para_tercero = False
     cita.razon_cita = "evaluacion"
     cita.telefono = "+50370000000"
     cita.clinic_id = "demo_clinic_1"

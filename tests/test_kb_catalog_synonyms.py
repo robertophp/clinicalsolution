@@ -43,6 +43,27 @@ def test_catalog_recubrimiento_pulpar_has_biodentine_alias():
     assert "biodentine" in aliases
 
 
+def test_system_prompt_includes_clinical_team_messaging_rule():
+    clinics = _clinics()
+    cfg = clinics["demo_clinic_1"]
+    text = build_conversation_system_prompt(
+        language="es",
+        clinic_id=cfg.id,
+        clinic_name=cfg.name,
+        assistant_name=cfg.assistant_name,
+        system_prompt=cfg.system_prompt,
+        system_prompt_en=cfg.system_prompt_en,
+        is_first_message=False,
+        stored_first_name="Samuel",
+        stored_full_name=None,
+        clinics_by_id=clinics,
+        policies=None,
+    )
+    assert "equipo de especialistas altamente calificados" in text
+    assert "NUNCA" in text and "solo la Dra. Palacios" in text
+    assert "nunca digas que solo una persona" in text.lower()
+
+
 def test_system_prompt_forbids_denying_manual_treatments():
     clinics = _clinics()
     cfg = clinics["demo_clinic_1"]

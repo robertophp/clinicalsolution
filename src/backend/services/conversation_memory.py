@@ -140,6 +140,10 @@ class ConversationMemoryService:
             metadata["last_discussed_service_at"] = _parse_timestamp(data.get("last_discussed_service_at"))
         if "cordales_xray_phase" in data:
             metadata["cordales_xray_phase"] = data.get("cordales_xray_phase")
+        if "beneficiario_edad" in data:
+            metadata["beneficiario_edad"] = data.get("beneficiario_edad")
+        if "maxillofacial_transfer_phase" in data:
+            metadata["maxillofacial_transfer_phase"] = data.get("maxillofacial_transfer_phase")
         return metadata
 
     def add_message(
@@ -211,8 +215,8 @@ class ConversationMemoryService:
         full_name: str,
     ) -> None:
         """
-        Persist the patient's full name and first name for this user/clinic.
-        Used so the assistant can greet by first name and avoid asking again.
+        Persist the contact/titular full name for this WhatsApp number (saludos).
+        NOT the beneficiary when booking for a third party.
         """
         name = (full_name or "").strip()
         if not name:
@@ -410,6 +414,67 @@ class ConversationMemoryService:
             {
                 "booking_phase": "none",
                 "booking_pending": {},
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_beneficiario_edad(self, clinic_id: str, from_number: str, age: int) -> None:
+        """Persiste la edad del niño/niña beneficiario detectada en la conversación."""
+        try:
+            age_val = int(age)
+        except (TypeError, ValueError):
+            return
+        if age_val < 0 or age_val > 18:
+            return
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "beneficiario_edad": age_val,
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def clear_beneficiario_edad(self, clinic_id: str, from_number: str) -> None:
+        """Limpia la edad del beneficiario tras agendar o al cerrar el flujo pediátrico."""
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "beneficiario_edad": firestore.DELETE_FIELD,
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_maxillofacial_awaiting_followup(self, clinic_id: str, from_number: str) -> None:
+        """Tras derivación maxilofacial directa: siguiente mensaje del paciente recibe cierre amable."""
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "maxillofacial_transfer_phase": "awaiting_followup",
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def clear_maxillofacial_transfer(self, clinic_id: str, from_number: str) -> None:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "maxillofacial_transfer_phase": "none",
                 "updated_at": now,
                 "clinic_id": clinic_id,
                 "from_number": from_number,

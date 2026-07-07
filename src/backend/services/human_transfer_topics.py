@@ -56,11 +56,13 @@ DEFAULT_TRANSFER_TOPICS: tuple[TransferTopicDefinition, ...] = (
         key="especialidades",
         description_es=(
             "Consultas que requieren especialista distinto al flujo general: ortodoncia, "
-            "cirugía maxilofacial, implantes complejos u otras especialidades avanzadas."
+            "implantes complejos u otras especialidades avanzadas. "
+            "NO incluye cirugía maxilofacial (maxilo): ese tema tiene flujo dedicado en el sistema."
         ),
         description_en=(
             "Topics that need a subspecialist beyond routine flow: orthodontics, "
-            "oral/maxillofacial surgery, complex implants, or other advanced specialties."
+            "complex implants, or other advanced specialties. "
+            "Do NOT include maxillofacial/oral surgery (maxilo): that topic has a dedicated system flow."
         ),
     ),
     TransferTopicDefinition(

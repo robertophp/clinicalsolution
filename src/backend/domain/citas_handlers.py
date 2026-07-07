@@ -9,17 +9,25 @@ from ..repositories import (
     CITA_STATUS_REAGENDADA,
     create_cita,
     get_latest_activa_cita_for_phone,
-    get_latest_cita_for_phone,
+    get_latest_self_cita_for_phone,
     list_upcoming_activa_citas_for_phone,
     update_cita_status,
 )
 from ..services.calendar_service import calendar_service, CalendarServiceError
 from . import availability
 from .calendar_retry import _retry_delete_event_async
+from .cita_beneficiary import (
+    cita_attendee_display_name,
+    cita_es_para_tercero,
+    resolve_booking_fields_from_args,
+)
+from .beneficiary_age import minor_suffix_for_age, resolve_beneficiario_edad
 from .catalog import _service_display_label
 from .clinics_state import get_clinics_by_id
 from .clinic_loader import CLINIC_POLICIES_BY_ID
 from .cordales_requirement import cordal_extraction_blocked_message
+from .maxillofacial_policy import is_maxillofacial_service_id, maxillofacial_booking_blocked_message
+from .urgency_calendar import _calendar_suffix_label_for_cita
 
 if TYPE_CHECKING:
     from ..services.conversation_memory import ConversationMemoryService
@@ -44,19 +52,33 @@ def _format_booking_success_message(
     hora: str,
     servicio_label: str,
     clinic_address: str | None,
+    attendee_name: str,
+    es_para_tercero: bool = False,
 ) -> str:
     """Mensaje de confirmación post-agendar; incluye dirección completa con saltos de línea si está configurada."""
     if language == "en":
-        confirm = (
-            f"Done! I've scheduled your appointment for {fecha} at {hora} "
-            f"(service: {servicio_label})."
-        )
+        if es_para_tercero:
+            confirm = (
+                f"Done! I've scheduled the appointment for {attendee_name} on {fecha} at {hora} "
+                f"(service: {servicio_label})."
+            )
+        else:
+            confirm = (
+                f"Done! I've scheduled your appointment for {fecha} at {hora} "
+                f"(service: {servicio_label})."
+            )
         location_intro = "Don't forget we're located at"
     else:
-        confirm = (
-            f"¡Listo! He agendado tu cita para el {fecha} a las {hora} "
-            f"(servicio: {servicio_label})."
-        )
+        if es_para_tercero:
+            confirm = (
+                f"¡Listo! He agendado la cita para {attendee_name} el {fecha} a las {hora} "
+                f"(servicio: {servicio_label})."
+            )
+        else:
+            confirm = (
+                f"¡Listo! He agendado tu cita para el {fecha} a las {hora} "
+                f"(servicio: {servicio_label})."
+            )
         location_intro = "No olvides que estamos ubicados en"
 
     address = (clinic_address or "").strip()
@@ -81,6 +103,7 @@ def _handle_agendar_cita(
     from datetime import datetime
 
     nombre = (args.get("nombre") or "").strip()
+    es_para_tercero = resolve_booking_fields_from_args(args)["es_para_tercero"]
     fecha = (args.get("fecha") or "").strip()
     hora = (args.get("hora") or "").strip()
     servicio = (args.get("servicio") or "").strip()
@@ -94,6 +117,16 @@ def _handle_agendar_cita(
     ):
         msg = cordal_extraction_blocked_message(language)
         return {"error": "Extracción cordal bloqueada", "mensaje": msg}
+
+    maxillo_policy = policies.maxillofacial_policy if policies else None
+    if (
+        maxillo_policy
+        and maxillo_policy.enabled
+        and maxillo_policy.block_direct_booking
+        and is_maxillofacial_service_id(servicio, maxillo_policy)
+    ):
+        msg = maxillofacial_booking_blocked_message(language)
+        return {"error": "Cita maxilofacial bloqueada", "mensaje": msg}
 
     if not all([nombre, fecha, hora, servicio]):
         if language == "en":
@@ -170,43 +203,72 @@ def _handle_agendar_cita(
     first_word_norm = first_word[:1].upper() + first_word[1:].lower() if first_word else ""
     use_full_name: str | None = None
 
-    metadata = _cm().get_metadata(clinic_id, from_number) or {}
-    if isinstance(metadata, dict):
-        stored_full_name = (metadata.get("patient_name") or "").strip()
-        stored_first = (metadata.get("patient_first_name") or "").strip()
-        if stored_full_name and stored_first and first_word_norm == stored_first and len(stored_full_name.split()) > 1:
-            use_full_name = stored_full_name
+    if not es_para_tercero:
+        metadata = _cm().get_metadata(clinic_id, from_number) or {}
+        if isinstance(metadata, dict):
+            stored_full_name = (metadata.get("patient_name") or "").strip()
+            stored_first = (metadata.get("patient_first_name") or "").strip()
+            if stored_full_name and stored_first and first_word_norm == stored_first and len(stored_full_name.split()) > 1:
+                use_full_name = stored_full_name
 
-    if use_full_name is None and first_word_norm:
-        try:
-            db_bq = SessionLocal()
+        if use_full_name is None and first_word_norm:
             try:
-                cita_prev = get_latest_cita_for_phone(db_bq, clinic_id=clinic_id, telefono=from_number)
-                if cita_prev and (cita_prev.paciente_nombre or "").strip():
-                    full_bq = cita_prev.paciente_nombre.strip()
-                    parts_bq = full_bq.split()
-                    first_bq = parts_bq[0][:1].upper() + parts_bq[0][1:].lower() if parts_bq else ""
-                    if first_bq == first_word_norm and len(parts_bq) > 1:
-                        use_full_name = full_bq
-            finally:
-                db_bq.close()
+                db_bq = SessionLocal()
+                try:
+                    cita_prev = get_latest_self_cita_for_phone(db_bq, clinic_id=clinic_id, telefono=from_number)
+                    if cita_prev and (cita_prev.paciente_nombre or "").strip():
+                        full_bq = cita_prev.paciente_nombre.strip()
+                        parts_bq = full_bq.split()
+                        first_bq = parts_bq[0][:1].upper() + parts_bq[0][1:].lower() if parts_bq else ""
+                        if first_bq == first_word_norm and len(parts_bq) > 1:
+                            use_full_name = full_bq
+                finally:
+                    db_bq.close()
+            except Exception:
+                pass
+
+        if use_full_name:
+            nombre = use_full_name
+            args = dict(args)
+            args["nombre"] = nombre
+
+    booking_fields = resolve_booking_fields_from_args(args)
+    if not booking_fields["beneficiary_display"]:
+        if language == "en":
+            msg = "I need the full name of the person who will attend the appointment."
+        else:
+            msg = "Necesito el nombre completo de la persona que asistirá a la cita."
+        return {"error": "Faltan datos", "mensaje": msg}
+
+    metadata = _cm().get_metadata(clinic_id, from_number) or {}
+    recent_messages = _cm().get_recent_messages(clinic_id, from_number, limit=24)
+    beneficiario_edad = resolve_beneficiario_edad(
+        args=args,
+        es_para_tercero=booking_fields["es_para_tercero"],
+        metadata=metadata if isinstance(metadata, dict) else None,
+        chat_history=recent_messages,
+    )
+    calendar_args = dict(args)
+    if beneficiario_edad is not None and not (calendar_args.get("suffix_urgencia") or "").strip():
+        auto_suffix = minor_suffix_for_age(beneficiario_edad)
+        if auto_suffix:
+            calendar_args["suffix_urgencia"] = auto_suffix
+
+    if not es_para_tercero:
+        try:
+            _cm().set_patient_name(clinic_id, from_number, booking_fields["paciente_nombre"] or nombre)
         except Exception:
             pass
-
-    if use_full_name:
-        nombre = use_full_name
-
-    try:
-        _cm().set_patient_name(clinic_id, from_number, nombre)
-    except Exception:
-        pass
 
     db = SessionLocal()
     try:
         cita = create_cita(
             db,
             clinic_id=clinic_id,
-            paciente_nombre=nombre,
+            paciente_nombre=booking_fields["paciente_nombre"],
+            nombre_secundario=booking_fields["nombre_secundario"],
+            es_para_tercero=booking_fields["es_para_tercero"],
+            beneficiario_edad=beneficiario_edad,
             telefono=from_number or "Sin teléfono",
             fecha=fecha,
             hora=hora,
@@ -217,7 +279,7 @@ def _handle_agendar_cita(
 
         if clinic_cfg and clinic_cfg.calendar_sync_enabled and clinic_cfg.calendar_id:
             try:
-                suffix_label = _calendar_suffix_label_for_cita(servicio, args)
+                suffix_label = _calendar_suffix_label_for_cita(servicio, calendar_args)
                 servicio_label_es = _service_display_label(clinic_id, servicio, "es")
                 event_id = calendar_service.create_event_for_cita(
                     calendar_id=clinic_cfg.calendar_id,
@@ -238,14 +300,21 @@ def _handle_agendar_cita(
                 cita.sync_error_message = str(exc)
                 db.add(cita)
                 db.commit()
+        try:
+            _cm().clear_beneficiario_edad(clinic_id, from_number)
+        except Exception:
+            pass
         servicio_label = _service_display_label(clinic_id, servicio, language)
         clinic_address = getattr(clinic_cfg, "clinic_address", None) if clinic_cfg else None
+        attendee = cita_attendee_display_name(cita)
         mensaje = _format_booking_success_message(
             language=language,
             fecha=fecha,
             hora=hora,
             servicio_label=servicio_label,
             clinic_address=clinic_address,
+            attendee_name=attendee,
+            es_para_tercero=booking_fields["es_para_tercero"],
         )
         return {"mensaje": mensaje}
     except Exception as e:
@@ -400,7 +469,10 @@ def _handle_reagendar_cita(from_number: str, clinic_id: str, language: str, assi
                 msg = "No tienes una cita activa para reagendar."
             return {"error": "Sin cita activa", "mensaje": msg}
 
-        nombre = (cita_activa.paciente_nombre or "").strip() or "Sin nombre"
+        nombre_titular = (cita_activa.paciente_nombre or "").strip() or None
+        nombre_secundario = (getattr(cita_activa, "nombre_secundario", None) or "").strip() or None
+        es_tercero = cita_es_para_tercero(cita_activa)
+        beneficiario_edad = getattr(cita_activa, "beneficiario_edad", None)
         razon = (servicio or (cita_activa.razon_cita or "").strip()) or None
 
         update_cita_status(db, cita_activa, CITA_STATUS_REAGENDADA)
@@ -408,7 +480,10 @@ def _handle_reagendar_cita(from_number: str, clinic_id: str, language: str, assi
         cita_nueva = create_cita(
             db,
             clinic_id=clinic_id,
-            paciente_nombre=nombre,
+            paciente_nombre=nombre_titular,
+            nombre_secundario=nombre_secundario,
+            es_para_tercero=es_tercero,
+            beneficiario_edad=beneficiario_edad,
             telefono=from_number or "Sin teléfono",
             fecha=fecha,
             hora=hora,
@@ -416,6 +491,14 @@ def _handle_reagendar_cita(from_number: str, clinic_id: str, language: str, assi
             origen_reserva="whatsapp_assistant",
             agendado_por=assistant_name,
         )
+
+        calendar_args = dict(args)
+        if beneficiario_edad is not None and not (calendar_args.get("suffix_urgencia") or "").strip():
+            auto_suffix = minor_suffix_for_age(
+                int(beneficiario_edad) if beneficiario_edad is not None else None
+            )
+            if auto_suffix:
+                calendar_args["suffix_urgencia"] = auto_suffix
 
         if clinic_cfg and clinic_cfg.calendar_sync_enabled and clinic_cfg.calendar_id:
             if cita_activa.calendar_id and cita_activa.calendar_event_id:
@@ -431,7 +514,7 @@ def _handle_reagendar_cita(from_number: str, clinic_id: str, language: str, assi
                     db.commit()
 
             try:
-                suffix_label = _calendar_suffix_label_for_cita(razon or "", args)
+                suffix_label = _calendar_suffix_label_for_cita(razon or "", calendar_args)
                 servicio_label_es = _service_display_label(clinic_id, razon or "evaluacion", "es")
                 event_id = calendar_service.create_event_for_cita(
                     calendar_id=clinic_cfg.calendar_id,
@@ -452,10 +535,17 @@ def _handle_reagendar_cita(from_number: str, clinic_id: str, language: str, assi
                 cita_nueva.sync_error_message = str(exc)
                 db.add(cita_nueva)
                 db.commit()
+        attendee = cita_attendee_display_name(cita_nueva)
         if language == "en":
-            mensaje = f"Done! I've rescheduled your appointment to {fecha} at {hora}."
+            if es_tercero:
+                mensaje = f"Done! I've rescheduled {attendee}'s appointment to {fecha} at {hora}."
+            else:
+                mensaje = f"Done! I've rescheduled your appointment to {fecha} at {hora}."
         else:
-            mensaje = f"¡Listo! He reagendado tu cita para el {fecha} a las {hora}."
+            if es_tercero:
+                mensaje = f"¡Listo! He reagendado la cita de {attendee} para el {fecha} a las {hora}."
+            else:
+                mensaje = f"¡Listo! He reagendado tu cita para el {fecha} a las {hora}."
         return {"mensaje": mensaje}
     except Exception as e:
         logging.warning("Error reagendando cita: %s", e)
@@ -485,26 +575,38 @@ def _handle_listar_mis_citas_proximas(from_number: str, clinic_id: str, language
             label = _service_display_label(clinic_id, sid, language) if sid else ""
             if not label:
                 label = sid or ("Not specified" if language == "en" else "Sin especificar")
-            items.append(
-                {
-                    "fecha": fe,
-                    "hora": hora_s,
-                    "servicio_id": sid or None,
-                    "servicio": label,
-                }
-            )
+            attendee = cita_attendee_display_name(c)
+            es_tercero = cita_es_para_tercero(c)
+            row: dict = {
+                "fecha": fe,
+                "hora": hora_s,
+                "servicio_id": sid or None,
+                "servicio": label,
+                "beneficiario": attendee,
+            }
+            if es_tercero:
+                row["es_para_tercero"] = True
+                if language == "en":
+                    row["nota_beneficiario"] = "for someone else"
+                else:
+                    row["nota_beneficiario"] = "para otra persona"
+            items.append(row)
         if language == "en":
             nota = (
                 "Active upcoming appointments for this patient's WhatsApp number in this clinic, "
                 "from the current moment in El Salvador (UTC-6). Each entry has fecha (YYYY-MM-DD), hora (HH:MM), "
-                "and servicio (human-readable). List them clearly for the patient. If citas is empty, say they have "
+                "servicio (human-readable), and beneficiario (who will attend). "
+                "If es_para_tercero is true, say it is for someone else and use beneficiario as their name. "
+                "List them clearly for the contact. If citas is empty, say they have "
                 "no upcoming active appointments on file."
             )
         else:
             nota = (
                 "Citas **activas** registradas para el teléfono de esta conversación en esta clínica, "
                 "desde el momento actual en hora de El Salvador (UTC-6). Cada elemento trae fecha (AAAA-MM-DD), "
-                "hora (HH:MM) y servicio (nombre legible). Enuméralas al paciente con fecha, hora y tipo de servicio. "
+                "hora (HH:MM), servicio (nombre legible) y beneficiario (quien asiste). "
+                "Si es_para_tercero es true, indica que es para otra persona y usa beneficiario como nombre. "
+                "Enuméralas al contacto con fecha, hora, servicio y beneficiario. "
                 "Si citas está vacío, indica que no tiene citas próximas registradas en el sistema."
             )
         return {"ok": True, "citas": items, "nota": nota}
