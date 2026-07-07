@@ -79,7 +79,7 @@ def test_agendar_cita_handler_ok_sin_bigquery_ni_calendar(memory_svc, demo_clini
     with (
         patch("backend.domain.availability._today_in_el_salvador", return_value=date(2026, 5, 13)),
         patch("backend.domain.citas_handlers.get_clinics_by_id", return_value=demo_clinic_sin_calendar),
-        patch("backend.domain.citas_handlers.get_latest_cita_for_phone", return_value=None),
+        patch("backend.domain.citas_handlers.get_latest_self_cita_for_phone", return_value=None),
         patch("backend.domain.citas_handlers.SessionLocal", return_value=db_mock),
         patch("backend.domain.citas_handlers.create_cita", return_value=fake_cita) as mock_create,
     ):
@@ -99,6 +99,45 @@ def test_agendar_cita_handler_ok_sin_bigquery_ni_calendar(memory_svc, demo_clini
     _fail_if_agendar_not_ok(out, context="[agendar ok]")
     mock_create.assert_called_once()
     assert db_mock.close.call_count == 2
+
+
+def test_agendar_cita_para_tercero_no_set_patient_name(memory_svc, demo_clinic_sin_calendar):
+    fake_cita = MagicMock()
+    fake_cita.paciente_nombre = None
+    fake_cita.nombre_secundario = "María López"
+    fake_cita.es_para_tercero = True
+
+    db_mock = MagicMock()
+
+    with (
+        patch("backend.domain.availability._today_in_el_salvador", return_value=date(2026, 5, 13)),
+        patch("backend.domain.citas_handlers.get_clinics_by_id", return_value=demo_clinic_sin_calendar),
+        patch("backend.domain.citas_handlers.SessionLocal", return_value=db_mock),
+        patch("backend.domain.citas_handlers.create_cita", return_value=fake_cita) as mock_create,
+    ):
+        out = _handle_agendar_cita(
+            from_number="whatsapp:+50370000010",
+            clinic_id="demo_clinic_1",
+            language="es",
+            assistant_name="Asistente Test",
+            args={
+                "nombre": "María López",
+                "fecha": "2026-05-15",
+                "hora": "13:00",
+                "servicio": "limpieza_dental",
+                "es_para_tercero": True,
+                "nombre_titular": "Roberto Menjivar",
+            },
+        )
+
+    _fail_if_agendar_not_ok(out, context="[tercero]")
+    assert "María López" in out["mensaje"]
+    memory_svc.set_patient_name.assert_not_called()
+    mock_create.assert_called_once()
+    _, kwargs = mock_create.call_args
+    assert kwargs["es_para_tercero"] is True
+    assert kwargs["nombre_secundario"] == "María López"
+    assert kwargs["paciente_nombre"] == "Roberto Menjivar"
 
 
 def test_cancelar_cita_handler_ok_sin_calendar(memory_svc, demo_clinic_sin_calendar):
@@ -140,7 +179,7 @@ def test_flujo_agendar_y_cancelar_en_secuencia(memory_svc, demo_clinic_sin_calen
     with (
         patch("backend.domain.availability._today_in_el_salvador", return_value=date(2026, 5, 13)),
         patch("backend.domain.citas_handlers.get_clinics_by_id", return_value=demo_clinic_sin_calendar),
-        patch("backend.domain.citas_handlers.get_latest_cita_for_phone", return_value=None),
+        patch("backend.domain.citas_handlers.get_latest_self_cita_for_phone", return_value=None),
         patch("backend.domain.citas_handlers.SessionLocal", return_value=db_mock),
         patch("backend.domain.citas_handlers.create_cita", return_value=fake_cita),
     ):
@@ -182,7 +221,7 @@ def test_agendar_cita_muestra_error_cuando_create_cita_falla(memory_svc, demo_cl
     with (
         patch("backend.domain.availability._today_in_el_salvador", return_value=date(2026, 5, 13)),
         patch("backend.domain.citas_handlers.get_clinics_by_id", return_value=demo_clinic_sin_calendar),
-        patch("backend.domain.citas_handlers.get_latest_cita_for_phone", return_value=None),
+        patch("backend.domain.citas_handlers.get_latest_self_cita_for_phone", return_value=None),
         patch("backend.domain.citas_handlers.SessionLocal", return_value=db_mock),
         patch("backend.domain.citas_handlers.create_cita", side_effect=boom),
     ):

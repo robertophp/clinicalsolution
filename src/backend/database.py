@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Generator
 
-from sqlalchemy import Column, Date, String, Time, create_engine
+from sqlalchemy import Boolean, Column, Date, Integer, String, Time, create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy_bigquery import TIMESTAMP
@@ -43,6 +43,9 @@ class Cita(Base):
     __tablename__ = "citas"
 
     paciente_nombre: str = Column("paciente_nombre", String(255), nullable=True)
+    nombre_secundario: str = Column("nombre_secundario", String(255), nullable=True)
+    es_para_tercero: bool | None = Column("es_para_tercero", Boolean, nullable=True)
+    beneficiario_edad: int | None = Column("beneficiario_edad", Integer, nullable=True)
     telefono: str = Column("telefono", String(255), nullable=True)
     fecha_cita = Column("fecha_cita", Date(), nullable=True)
     hora_cita = Column("hora_cita", Time(), nullable=True)

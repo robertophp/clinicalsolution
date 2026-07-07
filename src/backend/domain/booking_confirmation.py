@@ -13,7 +13,9 @@ from ..services.gemini_service import (
     GeminiService,
     GeminiServiceError,
 )
+from .beneficiary_age import parse_beneficiario_edad_arg
 from .catalog import _services_for_clinic
+from .cita_beneficiary import parse_es_para_tercero
 
 BookingConfirmIntent = Literal["approve", "decline", "revise", "unclear"]
 
@@ -128,6 +130,14 @@ def normalize_pending_booking_args(data: Mapping[str, Any]) -> dict[str, str] | 
     suffix = (data.get("suffix_urgencia") or "").strip()
     if suffix:
         out["suffix_urgencia"] = suffix
+    if parse_es_para_tercero(data.get("es_para_tercero")):
+        out["es_para_tercero"] = "true"
+        titular = (data.get("nombre_titular") or "").strip()
+        if titular:
+            out["nombre_titular"] = titular
+        edad = parse_beneficiario_edad_arg(data.get("beneficiario_edad"))
+        if edad is not None:
+            out["beneficiario_edad"] = str(edad)
     return out
 
 
@@ -138,7 +148,7 @@ def extract_pending_booking_from_conversation(
     assistant_confirmation_message: str,
     language: str,
     clinic_id: str,
-    default_patient_name: str,
+    default_patient_name: str | None = None,
     last_discussed_service_id: str | None = None,
 ) -> dict[str, str] | None:
     """
@@ -168,26 +178,44 @@ def extract_pending_booking_from_conversation(
         service_hint = f"\nIf the patient did not name a different service, prefer catalog id: {sid_hint!r}\n"
     use_en = (language or "").strip().lower().startswith("en")
     if use_en:
+        default_hint = (
+            f"Default beneficiary name for SELF booking only if thread confirms es_para_tercero=false: {default_patient_name!r}\n"
+            if default_patient_name
+            else "Do not invent a name. If beneficiary name is missing, return {\"incomplete\": true}.\n"
+        )
         instructions = (
-            "From this WhatsApp thread, extract the appointment the assistant asked the patient to confirm.\n"
-            f"Default patient name if missing in thread: {default_patient_name!r}\n"
+            "From this WhatsApp thread, extract the appointment the assistant asked the contact to confirm.\n"
+            f"{default_hint}"
+            "nombre = full name of who will ATTEND (beneficiary). "
+            "es_para_tercero = true if appointment is for someone other than the contact.\n"
+            "nombre_titular = optional contact name when es_para_tercero=true.\n"
             f"Service must be one of these catalog ids (pick the best match): {sample_ids}\n"
             f"{service_hint}"
             "Reply with ONE JSON object only, no markdown:\n"
             '{"nombre": "...", "fecha": "YYYY-MM-DD", "hora": "HH:00", "servicio": "catalog_id", '
+            '"es_para_tercero": false, "nombre_titular": null or "...", '
             '"suffix_urgencia": null or "dolor_post_cita" or "dolor_intenso"}\n'
-            "If date/time/service are not clear enough to book, return {\"incomplete\": true}."
+            "If date/time/service/beneficiary name are not clear enough to book, return {\"incomplete\": true}."
         )
     else:
+        default_hint = (
+            f"Nombre del beneficiario por defecto SOLO si el hilo confirma cita propia (es_para_tercero=false): {default_patient_name!r}\n"
+            if default_patient_name
+            else "No inventes un nombre. Si falta el nombre del beneficiario, devuelve {\"incomplete\": true}.\n"
+        )
         instructions = (
-            "Del hilo WhatsApp, extrae la cita que el asistente pidió confirmar al paciente.\n"
-            f"Nombre del paciente por defecto si falta: {default_patient_name!r}\n"
+            "Del hilo WhatsApp, extrae la cita que el asistente pidió confirmar.\n"
+            f"{default_hint}"
+            "nombre = nombre completo de quien ASISTE (beneficiario). "
+            "es_para_tercero = true si la cita es para otra persona distinta al contacto.\n"
+            "nombre_titular = opcional, nombre del titular del WhatsApp si es_para_tercero=true.\n"
             f"El servicio debe ser un id de este catálogo (elige el más adecuado): {sample_ids}\n"
             f"{service_hint}"
             "Responde SOLO un objeto JSON, sin markdown:\n"
             '{"nombre": "...", "fecha": "YYYY-MM-DD", "hora": "HH:00", "servicio": "id_catalogo", '
+            '"es_para_tercero": false, "nombre_titular": null o "...", '
             '"suffix_urgencia": null o "dolor_post_cita" o "dolor_intenso"}\n'
-            'Si no hay fecha/hora/servicio claros, devuelve {"incomplete": true}.'
+            'Si no hay fecha/hora/servicio/nombre del beneficiario claros, devuelve {"incomplete": true}.'
         )
 
     try:
@@ -207,8 +235,11 @@ def extract_pending_booking_from_conversation(
     if not data or data.get("incomplete"):
         return None
     if not (data.get("nombre") or "").strip():
-        data = dict(data)
-        data["nombre"] = default_patient_name
+        if default_patient_name and not parse_es_para_tercero(data.get("es_para_tercero")):
+            data = dict(data)
+            data["nombre"] = default_patient_name
+        else:
+            return None
     return normalize_pending_booking_args(data)
 
 
@@ -236,6 +267,34 @@ def patient_prompt_booking_unclear(language: str) -> str:
     )
 
 
+def patient_prompt_offer_response_unclear(
+    language: str,
+    *,
+    service_name: str | None = None,
+) -> str:
+    """Reconfirmación cuando la respuesta a una oferta de cita es ambigua (p. ej. «Excelente me encantaría»)."""
+    use_en = (language or "").strip().lower().startswith("en")
+    if use_en:
+        if service_name:
+            return (
+                f"Great! Just to confirm: would you like to book an appointment for {service_name}? "
+                "Reply **yes** or tell me if you'd prefer an evaluation first."
+            )
+        return (
+            "Great! Just to confirm: would you like to book an appointment? "
+            "Reply **yes** or tell me what you'd prefer."
+        )
+    if service_name:
+        return (
+            f"¡Qué bueno! Para confirmar: ¿quieres agendar la cita de {service_name}? "
+            "Responde **sí** o dime si prefieres una evaluación primero."
+        )
+    return (
+        "¡Qué bueno! Para confirmar: ¿quieres agendar la cita? "
+        "Responde **sí** o cuéntame qué prefieres."
+    )
+
+
 __all__ = [
     "BookingConfirmIntent",
     "assistant_asks_booking_confirm",
@@ -244,4 +303,5 @@ __all__ = [
     "normalize_pending_booking_args",
     "patient_prompt_booking_declined",
     "patient_prompt_booking_unclear",
+    "patient_prompt_offer_response_unclear",
 ]

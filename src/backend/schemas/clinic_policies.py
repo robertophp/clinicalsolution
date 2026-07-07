@@ -52,6 +52,83 @@ class CordalesPanoramicRequirementPolicies(BaseModel):
     block_direct_cordal_booking: bool = True
 
 
+class PediatricAgePolicies(BaseModel):
+    """
+    Restricción de edad mínima para pacientes pediátricos.
+    Configurable por clínica en ``policies.json``.
+    """
+
+    enabled: bool = False
+    min_age: int = 6
+    trigger_terms: list[str] = Field(
+        default_factory=lambda: [
+            "niño",
+            "niña",
+            "hijo",
+            "hija",
+            "menor",
+            "bebé",
+            "bebe",
+            "pequeño",
+            "pequeña",
+            "peque",
+            "mi nene",
+            "mi nena",
+            "child",
+            "kid",
+            "son",
+            "daughter",
+            "baby",
+            "toddler",
+            "infant",
+            "minor",
+            "little one",
+        ]
+    )
+    welcome_es: str = (
+        "¡Claro que sí! 😊 Atendemos niños y niñas de {min_age} añitos en adelante 🦷✨"
+    )
+    welcome_en: str = (
+        "Of course! 😊 We see children {min_age} years and older 🦷✨"
+    )
+    decline_es: str = (
+        "Entendemos tu preocupación 💛 Lamentablemente solo atendemos pacientes de "
+        "{min_age} añitos en adelante. ¿Hay algo más en lo que pueda ayudarte? 😊"
+    )
+    decline_en: str = (
+        "We understand your concern 💛 Unfortunately we only see patients {min_age} years "
+        "and older. Is there anything else I can help you with? 😊"
+    )
+    evaluation_service_id: str = "evaluacion"
+
+
+class MaxillofacialPolicies(BaseModel):
+    """
+    Cirugía maxilofacial: info desde catálogo; citas/horarios → derivación directa al especialista.
+    Configurable por clínica en ``policies.json``.
+    """
+
+    enabled: bool = False
+    trigger_terms: list[str] = Field(
+        default_factory=lambda: [
+            "maxilo",
+            "maxilofacial",
+            "mucocele",
+            "cirugia maxilofacial",
+            "cirugía maxilofacial",
+            "oral surgery",
+            "maxillofacial",
+        ]
+    )
+    target_service_ids: list[str] = Field(
+        default_factory=lambda: [
+            "evaluacion_con_especialista_maxilofacial",
+            "cirugia_de_mucocele_maxilofacial",
+        ]
+    )
+    block_direct_booking: bool = True
+
+
 class ClinicPolicies(BaseModel):
     """Políticas y ajustes de prompt por clínica (archivo `policies.json`)."""
 
@@ -61,4 +138,10 @@ class ClinicPolicies(BaseModel):
     booking: BookingPromptPolicies = Field(default_factory=BookingPromptPolicies)
     cordales_panoramic_requirement: CordalesPanoramicRequirementPolicies = Field(
         default_factory=CordalesPanoramicRequirementPolicies
+    )
+    pediatric_age_policy: PediatricAgePolicies = Field(
+        default_factory=PediatricAgePolicies
+    )
+    maxillofacial_policy: MaxillofacialPolicies = Field(
+        default_factory=MaxillofacialPolicies
     )

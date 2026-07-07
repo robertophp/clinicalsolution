@@ -14,6 +14,7 @@ def test_booking_success_message_includes_full_address_and_line_break_es() -> No
         hora="08:00",
         servicio_label="Evaluación",
         clinic_address=address,
+        attendee_name="Roberto Menjivar",
     )
     assert "¡Listo! He agendado tu cita para el 2026-06-13 a las 08:00" in msg
     assert "(servicio: Evaluación)." in msg
@@ -30,6 +31,7 @@ def test_booking_success_message_without_address_es() -> None:
         hora="08:00",
         servicio_label="Evaluación",
         clinic_address=None,
+        attendee_name="Roberto Menjivar",
     )
     assert msg == "¡Listo! He agendado tu cita para el 2026-06-13 a las 08:00 (servicio: Evaluación)."
     assert "No olvides" not in msg
@@ -42,6 +44,7 @@ def test_booking_success_message_en_with_address() -> None:
         hora="08:00",
         servicio_label="Cleaning",
         clinic_address="123 Main St\nCity 📍",
+        attendee_name="John Doe",
     )
     assert "Done! I've scheduled your appointment" in msg
     assert "\n\nDon't forget we're located at" in msg
