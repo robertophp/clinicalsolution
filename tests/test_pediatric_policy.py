@@ -11,6 +11,8 @@ from backend.domain.pediatric_policy import (
     extract_mentioned_age,
     format_pediatric_prompt_block,
     message_signals_pediatric_context,
+    patient_prompt_pediatric_decline,
+    pediatric_ineligibility_result,
 )
 from backend.schemas.clinic_policies import PediatricAgePolicies
 
@@ -77,6 +79,7 @@ def test_no_signal_when_disabled():
     ("niña de 10 años de edad", 10),
     ("tiene cuatro años", 4),
     ("tiene cinco años", 5),
+    ("Tiene 4 y se llama Santiago", 4),
 ])
 def test_extract_age_spanish(msg, expected):
     assert extract_mentioned_age(msg) == expected
@@ -149,8 +152,19 @@ def test_prompt_block_decline_es():
     assert "POLÍTICA PEDIÁTRICA" in block
     assert "NO ofrezcas agendar" in block
     assert "NO llames herramientas" in block
+    assert "NO ofrezcas evaluación" in block
+    assert "ÚNICAMENTE" in block
     assert "4" in block
     assert "6" in block
+
+
+def test_decline_message_es_short_no_booking_offer():
+    msg = patient_prompt_pediatric_decline("es", _POLICY)
+    lower = msg.lower()
+    assert "6" in msg
+    assert "evaluación" not in lower
+    assert "agendar" not in lower
+    assert "quedo" in lower or "ayudo" in lower
 
 
 def test_prompt_block_decline_en():
@@ -217,6 +231,32 @@ def test_real_phrase_general_question():
     result = classify_pediatric_context("Ustedes atienden niños?", _POLICY)
     assert result.is_pediatric is True
     assert result.mentioned_age is None
+
+
+def test_classify_under_age_with_tiene_4_only():
+    history = [{"role": "user", "content": "Quiero limpieza dental para niños"}]
+    result = classify_pediatric_context(
+        "Tiene 4 y se llama Santiago", _POLICY, history=history
+    )
+    assert result.is_pediatric is True
+    assert result.mentioned_age == 4
+    assert result.age_eligible is False
+
+
+def test_ineligibility_from_history_when_followup_no_age():
+    history = [
+        {"role": "user", "content": "Quiero limpieza dental para niños"},
+        {"role": "assistant", "content": "¿Cuántos añitos tiene?"},
+        {"role": "user", "content": "Tiene 4 y se llama Santiago"},
+    ]
+    blocked = pediatric_ineligibility_result(
+        "Solo quiero limpieza",
+        _POLICY,
+        history=history,
+    )
+    assert blocked is not None
+    assert blocked.age_eligible is False
+    assert blocked.mentioned_age == 4
 
 
 # ---------------------------------------------------------------------------

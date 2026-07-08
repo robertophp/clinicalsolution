@@ -102,6 +102,38 @@ class PediatricAgePolicies(BaseModel):
     evaluation_service_id: str = "evaluacion"
 
 
+class EmergencyForkPolicies(BaseModel):
+    """
+    Emergencia / dolor grave: paso de elección (cita mañana vs contacto del equipo médico).
+    Solo se activa con señales graves; dolor leve sigue el flujo normal de urgencia.
+    Configurable por clínica en ``policies.json``.
+    """
+
+    enabled: bool = False
+    choice_prompt_es: str | None = None
+    choice_prompt_en: str | None = None
+    choice_unclear_es: str | None = None
+    choice_unclear_en: str | None = None
+    transfer_sent_es: str | None = None
+    transfer_sent_en: str | None = None
+
+
+class SameDayForkPolicies(BaseModel):
+    """
+    Cita mismo día: paso de elección (mañana a primera hora vs contacto del equipo).
+    Por canal WhatsApp no se agendan citas el mismo día; se ofrece fork o derivación.
+    Configurable por clínica en ``policies.json``.
+    """
+
+    enabled: bool = False
+    choice_prompt_es: str | None = None
+    choice_prompt_en: str | None = None
+    choice_unclear_es: str | None = None
+    choice_unclear_en: str | None = None
+    transfer_sent_es: str | None = None
+    transfer_sent_en: str | None = None
+
+
 class MaxillofacialPolicies(BaseModel):
     """
     Cirugía maxilofacial: info desde catálogo; citas/horarios → derivación directa al especialista.
@@ -144,4 +176,10 @@ class ClinicPolicies(BaseModel):
     )
     maxillofacial_policy: MaxillofacialPolicies = Field(
         default_factory=MaxillofacialPolicies
+    )
+    emergency_fork_policy: EmergencyForkPolicies = Field(
+        default_factory=EmergencyForkPolicies
+    )
+    same_day_fork_policy: SameDayForkPolicies = Field(
+        default_factory=SameDayForkPolicies
     )

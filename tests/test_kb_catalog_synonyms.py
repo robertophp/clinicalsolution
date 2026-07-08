@@ -83,7 +83,7 @@ def test_system_prompt_forbids_denying_manual_treatments():
     assert "NUNCA digas que «no lo tenemos»" in text or "NUNCA niegues un tratamiento" in text
     assert "Biodentine" in text
     assert "RECUBRIMIENTO PULPAR" in text.upper() or "Recubrimiento pulpar" in text
-    assert "USD 145" in text or "145.00" in text
+    assert "USD 100" in text or "100.00" in text
 
 
 def test_catalog_prompt_includes_manual_cross_reference():

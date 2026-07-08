@@ -36,7 +36,12 @@ _CORRECTION_SIGNAL_RE = re.compile(
 )
 
 _CORRECTION_NAME_PATTERNS = (
-    re.compile(r"no es .+?,?\s*es\s+(.+)", re.IGNORECASE),
+    # "no es X, me llamo Y" → captura solo Y (evita capturar "me llamo Y" como nombre)
+    re.compile(
+        r"no\s+(?:me\s+llames?|me\s+llamas?|es)\s+\S+[^,;.!?]*?[,;]?\s*"
+        r"(?:(?:me\s+llamo|mi\s+nombre\s+es|soy|es)\s+)(.+)",
+        re.IGNORECASE,
+    ),
     re.compile(r"nombre correcto es\s+(.+)", re.IGNORECASE),
     re.compile(
         r"(?:me equivoqu[eé]|equivoque)[^,.!?]*[,.]?\s*(?:mi nombre es|me llamo|soy|es)\s+(.+)",
@@ -134,8 +139,16 @@ def _extract_json_object(raw: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+_NAME_INTRO_RE = re.compile(
+    r"^(?:me\s+llamo|mi\s+nombre\s+es|soy|my\s+name\s+is|i'?m|llamo)\s+",
+    re.IGNORECASE,
+)
+
 def _normalize_name(raw: str) -> str | None:
     name = re.sub(r"\s+", " ", (raw or "").strip())
+    name = re.sub(r"[.,!?;:]+$", "", name).strip()
+    # Strip accidental "me llamo X" prefix captured by regex groups
+    name = _NAME_INTRO_RE.sub("", name).strip()
     name = re.sub(r"[.,!?;:]+$", "", name).strip()
     if not name or len(name) < 2:
         return None

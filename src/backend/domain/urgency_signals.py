@@ -37,6 +37,24 @@ _URGENCY_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     )
 )
 
+# Solicitud explícita de cita/atención hoy (fork mismo día, distinto de dolor leve).
+_SAME_DAY_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"\b(atiend\w*|atend\w*|verme|ver)\w*\s+hoy\b",
+        r"\bhoy\s+(es\s+)?urgent",
+        r"\b(cita|turno|appointment)\s+(para\s+)?hoy\b",
+        r"\bneed\s+(to\s+)?see\s+(you|a\s+dentist)\s+today\b",
+        r"\btoday\b.*\burgent",
+        r"\bpara\s+hoy\b",
+        r"\bquiero\s+(?:una\s+)?cita\s+hoy\b",
+        r"\bme\s+atienden\s+hoy\b",
+        r"\b(?:slot|appointment)\s+today\b",
+        r"\bpueden\s+atenderme\s+hoy\b",
+        r"\bme\s+atienden\s+hoy\b",
+    )
+)
+
 
 def message_signals_urgency(message: str) -> bool:
     """
@@ -50,4 +68,12 @@ def message_signals_urgency(message: str) -> bool:
     return any(p.search(text) for p in _URGENCY_PATTERNS)
 
 
-__all__ = ["message_signals_urgency"]
+def message_signals_same_day_request(message: str) -> bool:
+    """True si el paciente pide cita o atención para hoy (fork mismo día)."""
+    text = (message or "").strip()
+    if not text:
+        return False
+    return any(p.search(text) for p in _SAME_DAY_PATTERNS)
+
+
+__all__ = ["message_signals_same_day_request", "message_signals_urgency"]

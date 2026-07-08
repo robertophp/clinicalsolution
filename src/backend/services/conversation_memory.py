@@ -144,6 +144,10 @@ class ConversationMemoryService:
             metadata["beneficiario_edad"] = data.get("beneficiario_edad")
         if "maxillofacial_transfer_phase" in data:
             metadata["maxillofacial_transfer_phase"] = data.get("maxillofacial_transfer_phase")
+        if "emergency_phase" in data:
+            metadata["emergency_phase"] = data.get("emergency_phase")
+        if "same_day_phase" in data:
+            metadata["same_day_phase"] = data.get("same_day_phase")
         return metadata
 
     def add_message(
@@ -475,6 +479,110 @@ class ConversationMemoryService:
         doc_ref.set(
             {
                 "maxillofacial_transfer_phase": "none",
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_emergency_awaiting_choice(self, clinic_id: str, from_number: str) -> None:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "emergency_phase": "awaiting_choice",
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_emergency_appointment_chosen(self, clinic_id: str, from_number: str) -> None:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "emergency_phase": "appointment_chosen",
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_emergency_awaiting_followup(self, clinic_id: str, from_number: str) -> None:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "emergency_phase": "awaiting_followup",
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def clear_emergency_fork(self, clinic_id: str, from_number: str) -> None:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "emergency_phase": "none",
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_same_day_awaiting_choice(self, clinic_id: str, from_number: str) -> None:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "same_day_phase": "awaiting_choice",
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_same_day_appointment_chosen(self, clinic_id: str, from_number: str) -> None:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "same_day_phase": "appointment_chosen",
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def set_same_day_awaiting_followup(self, clinic_id: str, from_number: str) -> None:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "same_day_phase": "awaiting_followup",
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def clear_same_day_fork(self, clinic_id: str, from_number: str) -> None:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "same_day_phase": "none",
                 "updated_at": now,
                 "clinic_id": clinic_id,
                 "from_number": from_number,
