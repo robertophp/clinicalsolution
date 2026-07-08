@@ -23,6 +23,12 @@
     "enabled": true,
     "min_age": 6
   },
+  "emergency_fork_policy": {
+    "enabled": true
+  },
+  "same_day_fork_policy": {
+    "enabled": true
+  },
   "maxillofacial_policy": {
     "enabled": true,
     "trigger_terms": [

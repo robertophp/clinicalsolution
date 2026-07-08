@@ -104,12 +104,30 @@ from .domain.cordales_requirement import (
 from .domain.pediatric_policy import (
     PediatricAgeResult,
     classify_pediatric_context,
+    patient_prompt_pediatric_decline,
+    pediatric_ineligibility_result,
 )
 from .domain.maxillofacial_policy import (
     MaxillofacialContextResult,
     classify_maxillofacial_context,
     patient_prompt_maxillofacial_followup,
     patient_prompt_maxillofacial_transfer_sent,
+)
+from .domain.emergency_fork_policy import (
+    classify_emergency_choice_response,
+    patient_prompt_emergency_choice,
+    patient_prompt_emergency_choice_unclear,
+    patient_prompt_emergency_followup,
+    patient_prompt_emergency_transfer_sent,
+    should_trigger_emergency_fork,
+)
+from .domain.same_day_fork_policy import (
+    classify_same_day_choice_response,
+    patient_prompt_same_day_choice,
+    patient_prompt_same_day_choice_unclear,
+    patient_prompt_same_day_followup,
+    patient_prompt_same_day_transfer_sent,
+    should_trigger_same_day_fork,
 )
 from .domain.patient_name_extraction import (
     assistant_asked_for_name,
@@ -196,11 +214,15 @@ def _generate_and_persist_reply(
     metadata = conversation_memory.get_metadata(clinic_id, from_number) or {}
     stored_first_name: str | None = None
     name_collection_phase = "none"
+    # True cuando el nombre viene de Firestore (actualizado por conversación);
+    # False cuando se toma de BigQuery como fallback. Evita que BQ sobreescriba correcciones del usuario.
+    name_from_firestore = False
     if isinstance(metadata, dict):
         stored_first_name = (metadata.get("patient_first_name") or None)  # Firestore
         name_collection_phase = (metadata.get("name_collection_phase") or "none").strip()
         if stored_first_name:
             name_collection_phase = "known"
+            name_from_firestore = True
 
     # Si no tenemos nombre en memoria pero ya existen citas previas en BigQuery,
     # intentamos recuperar el nombre del paciente a partir del teléfono y la clínica.
@@ -225,8 +247,10 @@ def _generate_and_persist_reply(
             # Si BigQuery falla, no rompemos el flujo de conversación.
             stored_first_name = stored_first_name
 
-    # Si tenemos primer nombre pero no nombre completo (o solo una palabra), intentar obtener nombre completo de BigQuery para el prompt.
-    if stored_first_name and isinstance(metadata, dict):
+    # Si tenemos primer nombre procedente de BQ (no corregido por el usuario en conversación)
+    # y no hay nombre completo, intentar obtenerlo de BigQuery para el prompt.
+    # Si el nombre vino de Firestore se respeta: el usuario puede haberlo corregido.
+    if stored_first_name and not name_from_firestore and isinstance(metadata, dict):
         stored_full = (metadata.get("patient_name") or "").strip()
         if not stored_full or len(stored_full.split()) < 2:
             try:
@@ -278,6 +302,39 @@ def _generate_and_persist_reply(
         conversation_memory.add_message(clinic_id, from_number, "user", body)
         conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
         return reply_text
+
+    emergency_phase = (
+        (metadata.get("emergency_phase") or "none").strip()
+        if isinstance(metadata, dict)
+        else "none"
+    )
+    if emergency_phase == "awaiting_followup":
+        reply_text = patient_prompt_emergency_followup(language)
+        try:
+            conversation_memory.clear_emergency_fork(clinic_id, from_number)
+        except Exception:
+            logging.warning("No se pudo limpiar emergency_phase", exc_info=True)
+        conversation_memory.add_message(clinic_id, from_number, "user", body)
+        conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+        return reply_text
+
+    same_day_phase = (
+        (metadata.get("same_day_phase") or "none").strip()
+        if isinstance(metadata, dict)
+        else "none"
+    )
+    if same_day_phase == "awaiting_followup":
+        reply_text = patient_prompt_same_day_followup(language)
+        try:
+            conversation_memory.clear_same_day_fork(clinic_id, from_number)
+        except Exception:
+            logging.warning("No se pudo limpiar same_day_phase", exc_info=True)
+        conversation_memory.add_message(clinic_id, from_number, "user", body)
+        conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+        return reply_text
+
+    emergency_appointment_chosen = emergency_phase == "appointment_chosen"
+    same_day_appointment_chosen = same_day_phase == "appointment_chosen"
 
     name_just_corrected = False
 
@@ -390,8 +447,17 @@ def _generate_and_persist_reply(
         clinic_policies.pediatric_age_policy if clinic_policies else None
     )
     pediatric_result: PediatricAgeResult | None = None
+    stored_beneficiario_edad: int | None = None
+    if isinstance(metadata, dict) and metadata.get("beneficiario_edad") is not None:
+        try:
+            stored_beneficiario_edad = int(metadata.get("beneficiario_edad"))
+        except (TypeError, ValueError):
+            stored_beneficiario_edad = None
+
     if pediatric_policy and pediatric_policy.enabled:
-        pediatric_result = classify_pediatric_context(body, pediatric_policy)
+        pediatric_result = classify_pediatric_context(
+            body, pediatric_policy, history=history
+        )
         if (
             pediatric_result.is_pediatric
             and pediatric_result.mentioned_age is not None
@@ -406,6 +472,22 @@ def _generate_and_persist_reply(
                     "No se pudo guardar beneficiario_edad en Firestore",
                     exc_info=True,
                 )
+
+    pediatric_ineligible = pediatric_ineligibility_result(
+        body,
+        pediatric_policy,
+        history=history,
+        stored_beneficiario_edad=stored_beneficiario_edad,
+    )
+    if pediatric_ineligible and pediatric_policy:
+        try:
+            conversation_memory.clear_booking_pending(clinic_id, from_number)
+        except Exception:
+            logging.warning("No se pudo limpiar booking_pending por edad pediátrica", exc_info=True)
+        reply_text = patient_prompt_pediatric_decline(language, pediatric_policy)
+        conversation_memory.add_message(clinic_id, from_number, "user", body)
+        conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+        return reply_text
 
     maxillofacial_result: MaxillofacialContextResult | None = None
     maxillo_policy = clinic_policies.maxillofacial_policy if clinic_policies else None
@@ -568,7 +650,21 @@ def _generate_and_persist_reply(
     if isinstance(booking_pending_raw, dict):
         booking_pending = normalize_pending_booking_args(booking_pending_raw)
 
-    if booking_phase == "awaiting_confirm" and booking_pending:
+    fork_awaiting_choice = (
+        same_day_phase == "awaiting_choice" or emergency_phase == "awaiting_choice"
+    )
+
+    if booking_phase == "awaiting_confirm" and booking_pending and not fork_awaiting_choice:
+        if pediatric_ineligible and pediatric_policy:
+            try:
+                conversation_memory.clear_booking_pending(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar booking_pending por edad pediátrica", exc_info=True)
+            reply_text = patient_prompt_pediatric_decline(language, pediatric_policy)
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
         booking_decision = classify_booking_confirm_response(body, language)
         if booking_decision == "approve":
             out = _handle_agendar_cita(
@@ -582,6 +678,15 @@ def _generate_and_persist_reply(
                 conversation_memory.clear_booking_pending(clinic_id, from_number)
             except Exception:
                 logging.warning("No se pudo limpiar booking_pending tras agendar", exc_info=True)
+            if isinstance(out, dict) and out.get("mensaje") and not out.get("error"):
+                try:
+                    conversation_memory.clear_emergency_fork(clinic_id, from_number)
+                except Exception:
+                    logging.warning("No se pudo limpiar emergency_phase tras agendar", exc_info=True)
+                try:
+                    conversation_memory.clear_same_day_fork(clinic_id, from_number)
+                except Exception:
+                    logging.warning("No se pudo limpiar same_day_phase tras agendar", exc_info=True)
             reply_text = (
                 str(out.get("mensaje")).strip()
                 if isinstance(out, dict) and out.get("mensaje")
@@ -596,6 +701,14 @@ def _generate_and_persist_reply(
                 conversation_memory.clear_booking_pending(clinic_id, from_number)
             except Exception:
                 logging.warning("No se pudo limpiar booking_pending tras rechazo", exc_info=True)
+            try:
+                conversation_memory.clear_emergency_fork(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar emergency_phase tras rechazo", exc_info=True)
+            try:
+                conversation_memory.clear_same_day_fork(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar same_day_phase tras rechazo", exc_info=True)
             reply_text = patient_prompt_booking_declined(language)
             conversation_memory.add_message(clinic_id, from_number, "user", body)
             conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
@@ -606,8 +719,239 @@ def _generate_and_persist_reply(
                 conversation_memory.clear_booking_pending(clinic_id, from_number)
             except Exception:
                 logging.warning("No se pudo limpiar booking_pending para revisión", exc_info=True)
+            try:
+                conversation_memory.clear_emergency_fork(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar emergency_phase para revisión", exc_info=True)
+            try:
+                conversation_memory.clear_same_day_fork(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar same_day_phase para revisión", exc_info=True)
         else:
             reply_text = patient_prompt_booking_unclear(language)
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
+    # --- Emergencia / dolor grave: elección cita vs contacto del equipo ---
+    emergency_policy = (
+        clinic_policies.emergency_fork_policy if clinic_policies else None
+    )
+    same_day_policy = (
+        clinic_policies.same_day_fork_policy if clinic_policies else None
+    )
+    if emergency_policy and emergency_policy.enabled and emergency_phase == "awaiting_choice":
+        choice = classify_emergency_choice_response(body)
+        if choice == "team_contact" and clinic_cfg:
+            spec_digits = parse_specialist_whatsapp_recipient(
+                getattr(clinic_cfg, "specialist_whatsapp", None)
+            )
+            if not spec_digits:
+                reply_text = patient_prompt_transfer_not_configured(language)
+                conversation_memory.add_message(clinic_id, from_number, "user", body)
+                conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+                return reply_text
+            try:
+                conversation_memory.clear_booking_pending(clinic_id, from_number)
+            except Exception:
+                pass
+            detection = HumanTransferDetection(
+                matched_topics=("emergencia_dolor",),
+                brief_reason=(
+                    "Emergency / severe dental pain — patient chose medical team contact"
+                    if language == "en"
+                    else "Emergencia / dolor dental grave — paciente eligió contacto del equipo médico"
+                ),
+            )
+            summary = generate_transfer_summary(
+                gemini_service,
+                history=history,
+                current_message=body,
+                language=language,
+                detection=detection,
+            )
+            token = (settings.META_WHATSAPP_ACCESS_TOKEN or "").strip()
+            phone_nid = resolve_whatsapp_phone_number_id_for_specialist(clinic_cfg)
+            stored_full_name_tr = (metadata.get("patient_name") or "").strip() if isinstance(metadata, dict) else ""
+            patient_name_tr = stored_full_name_tr or (stored_first_name or "").strip() or "No indicado"
+            specialist_body = build_specialist_derivation_message(
+                patient_name=patient_name_tr,
+                patient_phone_display=format_patient_phone_display(from_number),
+                summary=summary,
+            )
+            sent_ok = False
+            if token and phone_nid:
+                try:
+                    send_text_message_sync(
+                        graph_version=settings.META_GRAPH_API_VERSION,
+                        phone_number_id=phone_nid,
+                        to_wa_id=spec_digits,
+                        body=specialist_body,
+                        access_token=token,
+                    )
+                    sent_ok = True
+                    logging.info(
+                        "Derivación emergencia enviada clinic=%s to=%s phone_number_id=%s",
+                        clinic_id,
+                        spec_digits,
+                        phone_nid,
+                    )
+                except Exception:
+                    logging.exception(
+                        "Error enviando derivación emergencia (clinic=%s to=%s)",
+                        clinic_id,
+                        spec_digits,
+                    )
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            clinic_phone = getattr(clinic_cfg, "clinic_phone", None)
+            if sent_ok:
+                try:
+                    conversation_memory.set_emergency_awaiting_followup(clinic_id, from_number)
+                except Exception:
+                    logging.warning("No se pudo marcar emergency awaiting_followup", exc_info=True)
+                try:
+                    db = SessionLocal()
+                    try:
+                        update_latest_cita_transferencia_estado(
+                            db,
+                            clinic_id=clinic_id,
+                            telefono=from_number,
+                            estado=TRANSFERENCIA_ESTADO_TRANSFERIDO,
+                        )
+                    finally:
+                        db.close()
+                except Exception:
+                    logging.warning("BigQuery transferencia_estado emergencia no actualizado", exc_info=True)
+                reply_text = patient_prompt_emergency_transfer_sent(
+                    language,
+                    emergency_policy,
+                    clinic_phone=clinic_phone,
+                )
+            else:
+                reply_text = patient_prompt_transfer_send_failed(language)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
+        if choice == "appointment":
+            try:
+                conversation_memory.clear_booking_pending(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar booking_pending por elección emergencia", exc_info=True)
+            try:
+                conversation_memory.set_emergency_appointment_chosen(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo marcar emergency appointment_chosen", exc_info=True)
+            emergency_appointment_chosen = True
+        elif choice == "unclear":
+            reply_text = patient_prompt_emergency_choice_unclear(language, emergency_policy)
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
+    if same_day_policy and same_day_policy.enabled and same_day_phase == "awaiting_choice":
+        choice = classify_same_day_choice_response(body)
+        if choice == "team_contact" and clinic_cfg:
+            spec_digits = parse_specialist_whatsapp_recipient(
+                getattr(clinic_cfg, "specialist_whatsapp", None)
+            )
+            if not spec_digits:
+                reply_text = patient_prompt_transfer_not_configured(language)
+                conversation_memory.add_message(clinic_id, from_number, "user", body)
+                conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+                return reply_text
+            try:
+                conversation_memory.clear_booking_pending(clinic_id, from_number)
+            except Exception:
+                pass
+            detection = HumanTransferDetection(
+                matched_topics=("cita_mismo_dia",),
+                brief_reason=(
+                    "Same-day appointment request — patient chose team contact"
+                    if language == "en"
+                    else "Solicitud de cita para hoy — paciente eligió contacto del equipo"
+                ),
+            )
+            summary = generate_transfer_summary(
+                gemini_service,
+                history=history,
+                current_message=body,
+                language=language,
+                detection=detection,
+            )
+            token = (settings.META_WHATSAPP_ACCESS_TOKEN or "").strip()
+            phone_nid = resolve_whatsapp_phone_number_id_for_specialist(clinic_cfg)
+            stored_full_name_tr = (metadata.get("patient_name") or "").strip() if isinstance(metadata, dict) else ""
+            patient_name_tr = stored_full_name_tr or (stored_first_name or "").strip() or "No indicado"
+            specialist_body = build_specialist_derivation_message(
+                patient_name=patient_name_tr,
+                patient_phone_display=format_patient_phone_display(from_number),
+                summary=summary,
+            )
+            sent_ok = False
+            if token and phone_nid:
+                try:
+                    send_text_message_sync(
+                        graph_version=settings.META_GRAPH_API_VERSION,
+                        phone_number_id=phone_nid,
+                        to_wa_id=spec_digits,
+                        body=specialist_body,
+                        access_token=token,
+                    )
+                    sent_ok = True
+                    logging.info(
+                        "Derivación cita mismo día enviada clinic=%s to=%s phone_number_id=%s",
+                        clinic_id,
+                        spec_digits,
+                        phone_nid,
+                    )
+                except Exception:
+                    logging.exception(
+                        "Error enviando derivación cita mismo día (clinic=%s to=%s)",
+                        clinic_id,
+                        spec_digits,
+                    )
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            clinic_phone = getattr(clinic_cfg, "clinic_phone", None)
+            if sent_ok:
+                try:
+                    conversation_memory.set_same_day_awaiting_followup(clinic_id, from_number)
+                except Exception:
+                    logging.warning("No se pudo marcar same_day awaiting_followup", exc_info=True)
+                try:
+                    db = SessionLocal()
+                    try:
+                        update_latest_cita_transferencia_estado(
+                            db,
+                            clinic_id=clinic_id,
+                            telefono=from_number,
+                            estado=TRANSFERENCIA_ESTADO_TRANSFERIDO,
+                        )
+                    finally:
+                        db.close()
+                except Exception:
+                    logging.warning("BigQuery transferencia_estado cita mismo día no actualizado", exc_info=True)
+                reply_text = patient_prompt_same_day_transfer_sent(
+                    language,
+                    same_day_policy,
+                    clinic_phone=clinic_phone,
+                )
+            else:
+                reply_text = patient_prompt_transfer_send_failed(language)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
+        if choice == "appointment":
+            try:
+                conversation_memory.clear_booking_pending(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar booking_pending por elección cita hoy", exc_info=True)
+            try:
+                conversation_memory.set_same_day_appointment_chosen(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo marcar same_day appointment_chosen", exc_info=True)
+            same_day_appointment_chosen = True
+        elif choice == "unclear":
+            reply_text = patient_prompt_same_day_choice_unclear(language, same_day_policy)
             conversation_memory.add_message(clinic_id, from_number, "user", body)
             conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
             return reply_text
@@ -775,6 +1119,59 @@ def _generate_and_persist_reply(
         conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
         return reply_text
 
+    # --- Emergencia / dolor grave: primer turno → preguntar cita vs contacto del equipo ---
+    if should_trigger_emergency_fork(
+        policy_enabled=bool(emergency_policy and emergency_policy.enabled),
+        emergency_phase=emergency_phase,
+        booking_phase=booking_phase,
+        message=body,
+        force_human_contact=message_signals_human_contact_request(body),
+        maxillofacial_booking=bool(
+            maxillofacial_result
+            and maxillofacial_result.is_active
+            and maxillofacial_result.intent == "booking"
+        ),
+    ):
+        reply_text = patient_prompt_emergency_choice(
+            language,
+            emergency_policy,
+            first_name=stored_first_name,
+        )
+        try:
+            conversation_memory.set_emergency_awaiting_choice(clinic_id, from_number)
+        except Exception:
+            logging.warning("No se pudo marcar emergency awaiting_choice", exc_info=True)
+        conversation_memory.add_message(clinic_id, from_number, "user", body)
+        conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+        return reply_text
+
+    # --- Cita mismo día: primer turno → preguntar mañana vs contacto del equipo ---
+    if should_trigger_same_day_fork(
+        policy_enabled=bool(same_day_policy and same_day_policy.enabled),
+        same_day_phase=same_day_phase,
+        emergency_phase=emergency_phase,
+        booking_phase=booking_phase,
+        message=body,
+        force_human_contact=message_signals_human_contact_request(body),
+        maxillofacial_booking=bool(
+            maxillofacial_result
+            and maxillofacial_result.is_active
+            and maxillofacial_result.intent == "booking"
+        ),
+    ):
+        reply_text = patient_prompt_same_day_choice(
+            language,
+            same_day_policy,
+            first_name=stored_first_name,
+        )
+        try:
+            conversation_memory.set_same_day_awaiting_choice(clinic_id, from_number)
+        except Exception:
+            logging.warning("No se pudo marcar same_day awaiting_choice", exc_info=True)
+        conversation_memory.add_message(clinic_id, from_number, "user", body)
+        conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+        return reply_text
+
     maxillofacial_info_active = bool(
         maxillofacial_result
         and maxillofacial_result.is_active
@@ -926,6 +1323,8 @@ def _generate_and_persist_reply(
         name_just_corrected=name_just_corrected,
         pediatric_result=pediatric_result,
         maxillofacial_info_active=maxillofacial_info_active,
+        emergency_appointment_chosen=emergency_appointment_chosen,
+        same_day_appointment_chosen=same_day_appointment_chosen,
     )
 
     chat_history = _build_chat_history_with_memory(clinic_id, from_number, body)
@@ -957,6 +1356,14 @@ def _generate_and_persist_reply(
                     conversation_memory.clear_booking_pending(clinic_id, from_number)
                 except Exception:
                     pass
+                try:
+                    conversation_memory.clear_emergency_fork(clinic_id, from_number)
+                except Exception:
+                    logging.warning("No se pudo limpiar emergency_phase tras agendar_cita", exc_info=True)
+                try:
+                    conversation_memory.clear_same_day_fork(clinic_id, from_number)
+                except Exception:
+                    logging.warning("No se pudo limpiar same_day_phase tras agendar_cita", exc_info=True)
             return out
         if name == "cancelar_cita":
             out = _handle_cancelar_cita(from_number=from_number, clinic_id=clinic_id, language=language)

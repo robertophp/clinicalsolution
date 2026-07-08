@@ -18,6 +18,8 @@ from ..schemas.clinic_policies import BookingPromptPolicies, ClinicPolicies
 from .catalog import _format_services_catalog_for_prompt, _services_for_clinic
 from .cordales_requirement import format_cordales_panoramic_prompt_block
 from .maxillofacial_policy import format_maxillofacial_info_prompt_block
+from .emergency_fork_policy import format_emergency_appointment_prompt_block
+from .same_day_fork_policy import format_same_day_appointment_prompt_block
 from .pediatric_policy import PediatricAgeResult, format_pediatric_prompt_block
 from .prompt_clinic import (
     _format_clinic_location_for_prompt,
@@ -99,6 +101,8 @@ def build_conversation_system_prompt(
     name_just_corrected: bool = False,
     pediatric_result: PediatricAgeResult | None = None,
     maxillofacial_info_active: bool = False,
+    emergency_appointment_chosen: bool = False,
+    same_day_appointment_chosen: bool = False,
 ) -> str:
     """
     Construye el system prompt completo para un turno de conversación con herramientas de citas.
@@ -201,13 +205,15 @@ def build_conversation_system_prompt(
         )
     elif is_first_message:
         identidad_paciente = (
-            " Todavía no conoces el nombre del paciente. En esta primera respuesta, después de atender su consulta "
+            " Todavía no conoces el nombre del contacto. NUNCA uses «Paciente» ni apelativos genéricos. "
+            "En esta primera respuesta, después de atender su consulta "
             "(o invitarlo a contarte qué necesita), pídele su nombre UNA sola vez de forma empática "
             "(ej. «¿Con quién tengo el gusto?» o «¿Me compartes tu nombre para atenderte mejor?»)."
         )
     else:
         identidad_paciente = (
-            " Si no conoces el nombre del contacto, NO uses «Paciente» ni placeholders genéricos. "
+            " Si no conoces el nombre del contacto, NUNCA uses «Paciente», «patient» ni placeholders genéricos. "
+            "Habla en segunda persona (tú/te) o con empatía directa sin nombre. "
             "Puedes preguntarlo una sola vez de forma natural cuando encaje. "
             "Al agendar, pregunta si la cita es para el titular o para otra persona."
         )
@@ -294,6 +300,12 @@ def build_conversation_system_prompt(
         cordales_flow_active=cordales_flow_active,
     )
     system_prompt_effective = system_prompt_effective + _format_urgency_dolor_prompt_block(language)
+
+    if emergency_appointment_chosen:
+        system_prompt_effective += format_emergency_appointment_prompt_block(language)
+
+    if same_day_appointment_chosen:
+        system_prompt_effective += format_same_day_appointment_prompt_block(language)
 
     cordales_policy = policies.cordales_panoramic_requirement if policies else None
     if cordales_flow_active and cordales_policy and cordales_policy.enabled:

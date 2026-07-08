@@ -10,6 +10,8 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from typing import Mapping, Sequence
+
 from ..schemas.clinic_policies import PediatricAgePolicies
 
 
@@ -43,6 +45,7 @@ _AGE_DIGIT_RE = re.compile(
     r"tiene\s+(\d{1,2})\s*(?:anito?s?|anos?(?:\s+de\s+edad)?)\b"
     r"|de\s+(\d{1,2})\s*(?:anito?s?|anos?)\b"
     r"|(\d{1,2})\s*(?:anito?s?|anos?(?:\s+de\s+edad)?)\b"
+    r"|tiene\s+(\d{1,2})\b"
     # EN: "is 5 years old / years / y.o."
     r"|(?:is|are|he'?s|she'?s|they'?re)\s+(\d{1,2})\s*(?:years?\s+old|years?|y\.?o\.?)\b"
     r"|(\d{1,2})\s*(?:years?\s+old|y\.?o\.?)\b"
@@ -108,18 +111,93 @@ def extract_mentioned_age(message: str) -> int | None:
 def classify_pediatric_context(
     message: str,
     policy: PediatricAgePolicies,
+    *,
+    history: Sequence[Mapping[str, str]] | None = None,
 ) -> PediatricAgeResult:
-    """Clasifica el contexto pediátrico del mensaje."""
+    """Clasifica el contexto pediátrico del mensaje (y del hilo reciente si aplica)."""
     is_ped = message_signals_pediatric_context(message, policy)
+    if not is_ped and history:
+        for msg in history:
+            if (msg.get("role") or "").strip().lower() != "user":
+                continue
+            if message_signals_pediatric_context((msg.get("content") or "").strip(), policy):
+                is_ped = True
+                break
+
     if not is_ped:
         return PediatricAgeResult(is_pediatric=False, mentioned_age=None, age_eligible=None)
 
     age = extract_mentioned_age(message)
+    if age is None and history:
+        for msg in reversed(history):
+            if (msg.get("role") or "").strip().lower() != "user":
+                continue
+            age = extract_mentioned_age((msg.get("content") or "").strip())
+            if age is not None:
+                break
+
     if age is None:
         return PediatricAgeResult(is_pediatric=True, mentioned_age=None, age_eligible=None)
 
     eligible = age >= policy.min_age
     return PediatricAgeResult(is_pediatric=True, mentioned_age=age, age_eligible=eligible)
+
+
+def pediatric_ineligibility_result(
+    message: str,
+    policy: PediatricAgePolicies | None,
+    *,
+    history: Sequence[Mapping[str, str]] | None = None,
+    stored_beneficiario_edad: int | None = None,
+) -> PediatricAgeResult | None:
+    """
+    Si el hilo indica un niño/niña menor de edad mínima, devuelve el resultado con age_eligible=False.
+    """
+    if not policy or not policy.enabled:
+        return None
+
+    result = classify_pediatric_context(message, policy, history=history)
+    if result.is_pediatric and result.age_eligible is False:
+        return result
+
+    if stored_beneficiario_edad is not None and stored_beneficiario_edad < policy.min_age:
+        if result.is_pediatric or history_signals_pediatric_thread(history, policy):
+            return PediatricAgeResult(
+                is_pediatric=True,
+                mentioned_age=stored_beneficiario_edad,
+                age_eligible=False,
+            )
+
+    return None
+
+
+def history_signals_pediatric_thread(
+    history: Sequence[Mapping[str, str]] | None,
+    policy: PediatricAgePolicies,
+) -> bool:
+    if not history:
+        return False
+    for msg in history:
+        if (msg.get("role") or "").strip().lower() != "user":
+            continue
+        if message_signals_pediatric_context((msg.get("content") or "").strip(), policy):
+            return True
+    return False
+
+
+def patient_prompt_pediatric_decline(language: str, policy: PediatricAgePolicies) -> str:
+    """Mensaje fijo de declive cuando el menor no cumple edad mínima (sin pasar por Gemini)."""
+    use_en = (language or "").strip().lower().startswith("en")
+    min_age = policy.min_age
+    if use_en:
+        return (
+            f"We're very sorry 💛 Our clinic currently sees children **{min_age} years and older**. "
+            "If you have any other questions, I'm happy to help. 😊"
+        )
+    return (
+        f"Lo sentimos mucho 💛 En este momento la clínica solo atiende a niños y niñas de "
+        f"**{min_age} añitos en adelante**. Si tienes alguna otra consulta, con gusto te ayudo. 😊"
+    )
 
 
 def _render(template: str, min_age: int) -> str:
@@ -147,7 +225,8 @@ def format_pediatric_prompt_block(
             return (
                 f"\n\n[PEDIATRIC POLICY — MANDATORY THIS TURN]\n"
                 f"The patient mentioned a child under {min_age} years old (age: {result.mentioned_age}).\n"
-                f"- Respond with: «{decline}»\n"
+                f"- Respond ONLY with: «{decline}»\n"
+                f"- Do NOT ask questions. Do NOT offer evaluation, cleaning, or any appointment.\n"
                 f"- Do NOT offer to book an appointment for this child.\n"
                 f"- Do NOT call any booking tools (consultar_disponibilidad, agendar_cita, etc.).\n"
                 f"- Stay warm and empathetic. Use exactly the decline message above.\n"
@@ -155,7 +234,8 @@ def format_pediatric_prompt_block(
         return (
             f"\n\n[POLÍTICA PEDIÁTRICA — OBLIGATORIO ESTE TURNO]\n"
             f"El paciente mencionó un niño/niña menor de {min_age} años (edad: {result.mentioned_age}).\n"
-            f"- Responde con: «{decline}»\n"
+            f"- Responde ÚNICAMENTE con: «{decline}»\n"
+            f"- NO hagas preguntas. NO ofrezcas evaluación, limpieza ni ninguna cita.\n"
             f"- NO ofrezcas agendar cita para este/a niño/niña.\n"
             f"- NO llames herramientas de citas (consultar_disponibilidad, agendar_cita, etc.).\n"
             f"- Mantente empático/a y cálido/a. Usa exactamente el mensaje de arriba.\n"
@@ -207,5 +287,8 @@ __all__ = [
     "classify_pediatric_context",
     "extract_mentioned_age",
     "format_pediatric_prompt_block",
+    "history_signals_pediatric_thread",
     "message_signals_pediatric_context",
+    "patient_prompt_pediatric_decline",
+    "pediatric_ineligibility_result",
 ]

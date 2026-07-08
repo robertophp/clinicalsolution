@@ -81,6 +81,27 @@ def test_first_message_prompt_requires_empathetic_greeting() -> None:
     assert "¿Con quién tengo el gusto?" in text
 
 
+def test_prompt_forbids_paciente_without_known_name() -> None:
+    clinics = _clinics()
+    cfg = clinics["demo_clinic_1"]
+    text = build_conversation_system_prompt(
+        language="es",
+        clinic_id=cfg.id,
+        clinic_name=cfg.name,
+        assistant_name=cfg.assistant_name,
+        system_prompt=cfg.system_prompt,
+        system_prompt_en=cfg.system_prompt_en,
+        is_first_message=False,
+        stored_first_name=None,
+        stored_full_name=None,
+        clinics_by_id=clinics,
+        policies=CLINIC_POLICIES_BY_ID.get(cfg.id),
+    )
+    assert "CÓMO DIRIGIRTE AL USUARIO — OBLIGATORIO" in text
+    assert "NUNCA le digas «Paciente»" in text
+    assert "NUNCA uses «Paciente»" in text
+
+
 def test_prompt_includes_last_discussed_service_name_not_id() -> None:
     clinics = _clinics()
     cfg = clinics["demo_clinic_1"]

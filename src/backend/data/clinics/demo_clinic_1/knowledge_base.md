@@ -59,7 +59,7 @@ Recomendación técnica: `IF` el paciente pregunta por costos de radiografías o
 ## **4\. RECUBRIMIENTO PULPAR (BIODENTINE)**
 
 **Definición:** El Biodentine se usa en caries profundas de manera preventiva para proteger el nervio y ayudar a regenerar la dentina, así evitar endodoncias en algunos casos. Se requiere de diagnóstico previo y pruebas pulpares.  
-**Precio referencial:** El recubrimiento pulpar (Biodentine) tiene un costo de **USD 145.00** por pieza. La restauración posterior se cotiza aparte según el caso (ver FAQ).  
+**Precio referencial:** El recubrimiento pulpar (Biodentine) tiene un costo de **USD 100.00** por pieza. La restauración posterior se cotiza aparte según el caso (ver FAQ).  
 **Beneficios:**
 
 * Evitar endodoncias y extracciones innecesarias.  
@@ -171,4 +171,37 @@ Recomendación técnica**:** Mapear la intención "Invisalign o brackets transpa
   * **¿En cuántas citas se realiza?** Se ejecuta en una sola cita con resultados estéticos y naturales visibles de manera inmediata.
 
 Recomendación técnica**:** Habilitar el concepto de "recorte de encías / estética gingival". Clasificarlo como un tratamiento estético de una sola sesión e invitar al agendamiento de diagnóstico.
+
+## **13. ACTUALIZACIONES TÉCNICAS Y PROTOCOLOS DE INTEGRACIÓN**
+
+* **Tecnología Alemana y CAD/CAM:** La clínica destaca por su tecnología 100% alemana para la fabricación de coronas, puentes y restauraciones post-endodoncia en una sola cita, eliminando la necesidad de moldes incómodos.
+* **Centro de Imágenes Propio:** Se dispone de infraestructura interna para realizar estudios de alta resolución (Panorámicas, Cefalométricas, Tomografías, radiografías palmares y de ATM), evitando derivaciones externas.
+* **Protocolo de Endodoncia:** Ante resistencias por costo, aplicar el argumento de "valor": salvar la pieza natural en una cita vs. el costo acumulado y desgaste de una extracción y posterior puente/implante.
+* **Distinción Laminados vs. Carillas:** Los Laminados corrigen estética sin desgaste dental; las Carillas (Disilicato de Litio o Porcelana) requieren un leve desgaste pero ofrecen mayor durabilidad.
+* **Ortodoncia:** El flujo de atención incluye Brackets (metálicos/estéticos) y la certificación oficial en Invisalign. Las citas de ortodoncia son exclusivamente los **jueves de 9:00 a. m. a 4:30 p. m.**
+* **Gingivectomía:** Procedimiento estético rápido realizado con tecnología láser de alta precisión en una sola sesión.
+
+## **14. RESUMEN DE TARIFARIO OFICIAL**
+
+| Servicio | Precio (USD) |
+| --- | --- |
+| Diagnóstico Dental | $25.00 |
+| Limpieza Dental Profunda | $30.00 |
+| Rellenos Dentales (Resinas) | $35.00 - $45.00 (por pieza) |
+| Biodentine (Recubrimiento) | $100.00 (pieza) / Relleno desde $45.00 |
+| Endodoncia | $275.00 |
+| Extracción Dental Simple | $60.00 (por pieza) |
+| Blanqueamiento (Consultorio) | $200.00 |
+| Blanqueamiento Interno | $150.00 (por pieza) |
+| Laminados Dentales | $125.00 (por diente) |
+| Gingivectomía Completa | $250.00 |
+| Consulta Ortodoncia | $50.00 |
+| Coronas Dentales | $400.00 - $500.00 (por pieza) |
+| Prótesis Removibles (Acrílico) | $250.00 (Arcada) - $500.00 (Completa) |
+| Prótesis Removibles (Valplast) | $500.00 (Arcada Superior/Inferior) |
+| Prótesis Fijas (Empress CAD) | $300.00 (unidad) |
+| Prótesis Fijas (Zirconio/Emax) | $400.00 (unidad) |
+| Prótesis Fijas (Cerec Tessera) | $500.00 (unidad) |
+| Implantes Dentales | $1,000.00 (unidad) |
+| Radiografías (Panorámica/Cefalométrica) | $20.00 (cada una) |
 
