@@ -10,6 +10,7 @@ from backend.domain.emergency_fork_policy import (
 )
 from backend.domain.urgency_signals import message_signals_urgency
 from backend.schemas.clinic_policies import EmergencyForkPolicies
+from tests.emoji_utils import count_emojis
 
 
 _POLICY = EmergencyForkPolicies(enabled=True)
@@ -47,8 +48,8 @@ def test_classify_emergency_choice_unclear():
 def test_emergency_choice_prompt_has_emojis():
     text = patient_prompt_emergency_choice("es", _POLICY)
     assert "🦷" in text
-    assert "📅" in text
-    assert "📞" in text
+    assert "💛" in text
+    assert count_emojis(text) <= 2
 
 
 def test_emergency_transfer_sent_includes_phone():

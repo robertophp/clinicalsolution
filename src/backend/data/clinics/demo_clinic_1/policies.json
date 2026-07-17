@@ -29,6 +29,10 @@
   "same_day_fork_policy": {
     "enabled": true
   },
+  "confusion_loop_policy": {
+    "enabled": true,
+    "threshold": 2
+  },
   "maxillofacial_policy": {
     "enabled": true,
     "trigger_terms": [

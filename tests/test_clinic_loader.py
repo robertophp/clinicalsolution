@@ -42,7 +42,9 @@ def test_demo_clinic_2_transfer_topic_filter(clinics_root: Path) -> None:
     assert topics[0].key == "quejas"
 
 
-def test_missing_knowledge_base_file_does_not_crash(tmp_path: Path) -> None:
+def test_missing_knowledge_base_file_does_not_crash(
+    tmp_path: Path, clinics_root: Path
+) -> None:
     clinic_dir = tmp_path / "demo_missing_kb"
     clinic_dir.mkdir()
     (clinic_dir / "brand.json").write_text(
@@ -60,3 +62,5 @@ def test_missing_knowledge_base_file_does_not_crash(tmp_path: Path) -> None:
     clinics = load_clinic_tree(tmp_path)
     assert "demo_missing_kb" in clinics
     assert clinics["demo_missing_kb"].knowledge_base is None
+
+    load_clinic_tree(clinics_root)

@@ -14,7 +14,8 @@ class Intent(str, Enum):
     CLINICA_INFO = "clinica_info"  # dirección, horarios, formas de pago, contacto
     SEGUIMIENTO_CITA = "seguimiento_cita"  # llegar tarde, confirmar asistencia, dudas sobre cita concreta
     SMALL_TALK = "small_talk"  # saludos, gracias, despedidas breves
-    OUT_OF_DOMAIN = "out_of_domain"  # cualquier otro tema ajeno a la clínica
+    UNINTELLIGIBLE = "unintelligible"  # jerga/ruido: no se puede determinar intención
+    OUT_OF_DOMAIN = "out_of_domain"  # tema ajeno coherente (pizza, mecánica, etc.)
 
 
 def _normalize(text: str) -> str:
