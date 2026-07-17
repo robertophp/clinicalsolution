@@ -202,6 +202,7 @@ async def test_enthusiastic_ambiguous_reply_gets_reconfirm_not_guardrail(client)
     memory.get_metadata.return_value = {"last_discussed_service_id": "limpieza_dental"}
     memory.get_recent_messages.return_value = history
     memory.add_message.return_value = None
+    memory.bump_confusion_count.return_value = 1
 
     with patch("backend.bootstrap.gemini_service") as mock_gemini, patch(
         "backend.bootstrap.conversation_memory", memory

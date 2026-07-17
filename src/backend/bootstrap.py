@@ -28,6 +28,7 @@ from .services.gemini_service import GeminiService, GeminiServiceError
 from .services.conversation_memory import ConversationMemoryService
 from .services.intent_classifier import (
     Intent,
+    assistant_message_is_offer_reconfirm,
     classify_intent,
     extract_knowledge_base_topics,
     is_contextual_offer_acceptance,
@@ -35,6 +36,7 @@ from .services.intent_classifier import (
     should_fail_open_after_offer_reconfirm,
     should_reconfirm_after_booking_offer,
 )
+from .services.intent_classifier import _last_assistant_content
 from .services.intent_llm_service import llm_classify_intent
 from .services.calendar_sync_service import run_calendar_to_bigquery_sync
 from .services.human_transfer_service import (
@@ -129,6 +131,21 @@ from .domain.same_day_fork_policy import (
     patient_prompt_same_day_transfer_sent,
     should_trigger_same_day_fork,
 )
+from .domain.confusion_loop_policy import (
+    classify_confusion_menu_choice,
+    classify_scheduling_menu_choice,
+    extract_offered_hours,
+    looks_like_bot_repetition,
+    offered_hours_for_non_answer_context,
+    patient_prompt_confusion_menu,
+    patient_prompt_confusion_menu_unclear,
+    patient_prompt_general_menu_routed,
+    patient_prompt_non_answer_reask,
+    patient_prompt_scheduling_other_times,
+    resolve_confusion_context,
+    resolve_non_answer_menu_context,
+    user_reply_is_non_answer,
+)
 from .domain.patient_name_extraction import (
     assistant_asked_for_name,
     try_extract_name_correction,
@@ -166,6 +183,155 @@ gemini_service = GeminiService(
 )
 conversation_memory = ConversationMemoryService(project_id=settings.PROJECT_ID)
 set_conversation_memory_for_cita_handlers(conversation_memory)
+
+
+def _activate_confusion_menu(
+    *,
+    clinic_id: str,
+    from_number: str,
+    language: str,
+    confusion_policy: Any,
+    context: str,
+    stored_first_name: str | None,
+    offered_hours: list[str] | None = None,
+) -> str:
+    menu = patient_prompt_confusion_menu(
+        language,
+        confusion_policy,
+        context=context,  # type: ignore[arg-type]
+        first_name=stored_first_name,
+        offered_hours=offered_hours,
+    )
+    try:
+        conversation_memory.set_confusion_awaiting_menu(
+            clinic_id,
+            from_number,
+            context=context,
+            offered_hours=offered_hours,
+        )
+    except Exception:
+        logging.warning("No se pudo marcar confusion awaiting_menu_choice", exc_info=True)
+    return menu
+
+
+def _maybe_escalate_confusion_reply(
+    *,
+    clinic_id: str,
+    from_number: str,
+    language: str,
+    confusion_policy: Any,
+    context: str,
+    stored_first_name: str | None,
+    unclear_prompt: str,
+    offered_hours: list[str] | None = None,
+) -> str:
+    """Tras respuesta confusa: re-pregunta breve o menú numérico si se alcanza el umbral."""
+    if not confusion_policy or not getattr(confusion_policy, "enabled", False):
+        return unclear_prompt
+    try:
+        count = conversation_memory.bump_confusion_count(clinic_id, from_number)
+    except Exception:
+        logging.warning("No se pudo incrementar confusion_count", exc_info=True)
+        return unclear_prompt
+    if not isinstance(count, int):
+        count = 1
+    threshold = max(1, int(getattr(confusion_policy, "threshold", None) or 2))
+    if count >= threshold:
+        return _activate_confusion_menu(
+            clinic_id=clinic_id,
+            from_number=from_number,
+            language=language,
+            confusion_policy=confusion_policy,
+            context=context,
+            stored_first_name=stored_first_name,
+            offered_hours=offered_hours,
+        )
+    return unclear_prompt
+
+
+def _send_human_transfer_from_confusion(
+    *,
+    clinic_id: str,
+    from_number: str,
+    body: str,
+    language: str,
+    history: list[dict[str, str]],
+    clinic_cfg: Any,
+    metadata: dict[str, Any],
+    stored_first_name: str | None,
+    brief_reason_es: str,
+    brief_reason_en: str,
+    matched_topics: tuple[str, ...] = ("confusion_rescue",),
+) -> str:
+    """Derivación al especialista cuando el menú de rescate no fue comprendido."""
+    spec_digits = parse_specialist_whatsapp_recipient(
+        getattr(clinic_cfg, "specialist_whatsapp", None) if clinic_cfg else None
+    )
+    if not spec_digits:
+        return patient_prompt_transfer_not_configured(language)
+    detection = HumanTransferDetection(
+        matched_topics=matched_topics,
+        brief_reason=brief_reason_en if language == "en" else brief_reason_es,
+    )
+    summary = generate_transfer_summary(
+        gemini_service,
+        history=history,
+        current_message=body,
+        language=language,
+        detection=detection,
+    )
+    token = (settings.META_WHATSAPP_ACCESS_TOKEN or "").strip()
+    phone_nid = resolve_whatsapp_phone_number_id_for_specialist(clinic_cfg)
+    stored_full_name_tr = (metadata.get("patient_name") or "").strip() if isinstance(metadata, dict) else ""
+    patient_name_tr = stored_full_name_tr or (stored_first_name or "").strip() or "No indicado"
+    specialist_body = build_specialist_derivation_message(
+        patient_name=patient_name_tr,
+        patient_phone_display=format_patient_phone_display(from_number),
+        summary=summary,
+    )
+    sent_ok = False
+    if token and phone_nid:
+        try:
+            send_text_message_sync(
+                graph_version=settings.META_GRAPH_API_VERSION,
+                phone_number_id=phone_nid,
+                to_wa_id=spec_digits,
+                body=specialist_body,
+                access_token=token,
+            )
+            sent_ok = True
+        except Exception:
+            logging.exception(
+                "Error enviando derivación por confusion_rescue (clinic=%s to=%s)",
+                clinic_id,
+                spec_digits,
+            )
+    if sent_ok:
+        try:
+            db = SessionLocal()
+            try:
+                update_latest_cita_transferencia_estado(
+                    db,
+                    clinic_id=clinic_id,
+                    telefono=from_number,
+                    estado=TRANSFERENCIA_ESTADO_TRANSFERIDO,
+                )
+            finally:
+                db.close()
+        except Exception:
+            logging.warning("BigQuery transferencia_estado confusion_rescue no actualizado", exc_info=True)
+        clinic_phone = getattr(clinic_cfg, "clinic_phone", None) if clinic_cfg else None
+        phone_line = f"\n\n📞 {clinic_phone}" if clinic_phone else ""
+        if language == "en":
+            return (
+                "I've shared your case with our team ✅ They'll contact you as soon as possible."
+                f"{phone_line}"
+            )
+        return (
+            "Tu mensaje ya fue compartido con nuestro equipo ✅ Te contactarán a la brevedad."
+            f"{phone_line}"
+        )
+    return patient_prompt_transfer_send_failed(language)
 
 
 def _build_chat_history_with_memory(
@@ -500,6 +666,147 @@ def _generate_and_persist_reply(
         )
 
     clinic_cfg = CLINICS_BY_ID.get(clinic_id)
+    confusion_policy = (
+        clinic_policies.confusion_loop_policy if clinic_policies else None
+    )
+    confusion_phase = (
+        (metadata.get("confusion_phase") or "none").strip()
+        if isinstance(metadata, dict)
+        else "none"
+    )
+    confusion_context = (
+        (metadata.get("confusion_context") or "general").strip()
+        if isinstance(metadata, dict)
+        else "general"
+    )
+    confusion_offered_hours_raw = (
+        metadata.get("confusion_offered_hours") if isinstance(metadata, dict) else None
+    )
+    confusion_offered_hours: list[str] = (
+        [str(h) for h in confusion_offered_hours_raw if h]
+        if isinstance(confusion_offered_hours_raw, list)
+        else []
+    )
+
+    # --- Menú numérico de rescate (anti-bucle) ---
+    if (
+        confusion_policy
+        and confusion_policy.enabled
+        and confusion_phase == "awaiting_menu_choice"
+    ):
+        menu_choice = classify_confusion_menu_choice(
+            body,
+            context=confusion_context,  # type: ignore[arg-type]
+            offered_hours=confusion_offered_hours or None,
+        )
+        if menu_choice == "unclear":
+            try:
+                retries = conversation_memory.bump_confusion_menu_retries(clinic_id, from_number)
+            except Exception:
+                retries = 1
+                logging.warning("No se pudo incrementar confusion_menu_retries", exc_info=True)
+            if retries >= 2:
+                try:
+                    conversation_memory.clear_confusion_state(clinic_id, from_number)
+                except Exception:
+                    logging.warning("No se pudo limpiar confusion_state tras menú", exc_info=True)
+                reply_text = _send_human_transfer_from_confusion(
+                    clinic_id=clinic_id,
+                    from_number=from_number,
+                    body=body,
+                    language=language,
+                    history=history,
+                    clinic_cfg=clinic_cfg,
+                    metadata=metadata if isinstance(metadata, dict) else {},
+                    stored_first_name=stored_first_name,
+                    brief_reason_es="Paciente no comprendió menú de rescate — derivación automática",
+                    brief_reason_en="Patient did not understand rescue menu — automatic transfer",
+                )
+            else:
+                reply_text = patient_prompt_confusion_menu_unclear(
+                    language,
+                    confusion_policy,
+                    context=confusion_context,  # type: ignore[arg-type]
+                )
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
+        try:
+            conversation_memory.clear_confusion_state(clinic_id, from_number)
+        except Exception:
+            logging.warning("No se pudo limpiar confusion_state tras elección de menú", exc_info=True)
+
+        if confusion_context == "general":
+            if menu_choice == "human":
+                reply_text = _send_human_transfer_from_confusion(
+                    clinic_id=clinic_id,
+                    from_number=from_number,
+                    body=body,
+                    language=language,
+                    history=history,
+                    clinic_cfg=clinic_cfg,
+                    metadata=metadata if isinstance(metadata, dict) else {},
+                    stored_first_name=stored_first_name,
+                    brief_reason_es="Paciente eligió hablar con el equipo desde menú de rescate",
+                    brief_reason_en="Patient chose to speak with the team from rescue menu",
+                )
+            else:
+                reply_text = patient_prompt_general_menu_routed(language, menu_choice)  # type: ignore[arg-type]
+            conversation_memory.add_message(clinic_id, from_number, "user", body)
+            conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+            return reply_text
+
+        if confusion_context == "scheduling_offer":
+            sched_choice, chosen_hour = classify_scheduling_menu_choice(
+                body,
+                offered_hours=confusion_offered_hours,
+            )
+            if sched_choice == "human":
+                reply_text = _send_human_transfer_from_confusion(
+                    clinic_id=clinic_id,
+                    from_number=from_number,
+                    body=body,
+                    language=language,
+                    history=history,
+                    clinic_cfg=clinic_cfg,
+                    metadata=metadata if isinstance(metadata, dict) else {},
+                    stored_first_name=stored_first_name,
+                    brief_reason_es="Paciente eligió hablar con el equipo desde menú de horarios",
+                    brief_reason_en="Patient chose to speak with the team from scheduling menu",
+                )
+                conversation_memory.add_message(clinic_id, from_number, "user", body)
+                conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+                return reply_text
+            if sched_choice == "other_times":
+                reply_text = patient_prompt_scheduling_other_times(language)
+                conversation_memory.add_message(clinic_id, from_number, "user", body)
+                conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+                return reply_text
+            if sched_choice == "hour" and chosen_hour:
+                body = f"a las {chosen_hour}"
+            else:
+                reply_text = patient_prompt_confusion_menu_unclear(
+                    language,
+                    confusion_policy,
+                    context=confusion_context,  # type: ignore[arg-type]
+                )
+                conversation_memory.add_message(clinic_id, from_number, "user", body)
+                conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+                return reply_text
+
+        if confusion_context == "booking_confirm":
+            if menu_choice == "approve":
+                body = "sí"
+            elif menu_choice == "decline":
+                body = "no"
+            elif menu_choice == "revise":
+                body = "cambiar"
+        elif confusion_context in ("emergency", "same_day"):
+            if menu_choice == "appointment":
+                body = "1"
+            elif menu_choice == "team_contact":
+                body = "2"
 
     # --- Derivación a especialista: confirmación del resumen (antes de guardrails de dominio) ---
     human_phase = (metadata.get("human_transfer_phase") or "none") if isinstance(metadata, dict) else "none"
@@ -678,6 +985,10 @@ def _generate_and_persist_reply(
                 conversation_memory.clear_booking_pending(clinic_id, from_number)
             except Exception:
                 logging.warning("No se pudo limpiar booking_pending tras agendar", exc_info=True)
+            try:
+                conversation_memory.clear_confusion_state(clinic_id, from_number)
+            except Exception:
+                logging.warning("No se pudo limpiar confusion_state tras agendar", exc_info=True)
             if isinstance(out, dict) and out.get("mensaje") and not out.get("error"):
                 try:
                     conversation_memory.clear_emergency_fork(clinic_id, from_number)
@@ -728,7 +1039,15 @@ def _generate_and_persist_reply(
             except Exception:
                 logging.warning("No se pudo limpiar same_day_phase para revisión", exc_info=True)
         else:
-            reply_text = patient_prompt_booking_unclear(language)
+            reply_text = _maybe_escalate_confusion_reply(
+                clinic_id=clinic_id,
+                from_number=from_number,
+                language=language,
+                confusion_policy=confusion_policy,
+                context="booking_confirm",
+                stored_first_name=stored_first_name,
+                unclear_prompt=patient_prompt_booking_unclear(language),
+            )
             conversation_memory.add_message(clinic_id, from_number, "user", body)
             conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
             return reply_text
@@ -843,7 +1162,15 @@ def _generate_and_persist_reply(
                 logging.warning("No se pudo marcar emergency appointment_chosen", exc_info=True)
             emergency_appointment_chosen = True
         elif choice == "unclear":
-            reply_text = patient_prompt_emergency_choice_unclear(language, emergency_policy)
+            reply_text = _maybe_escalate_confusion_reply(
+                clinic_id=clinic_id,
+                from_number=from_number,
+                language=language,
+                confusion_policy=confusion_policy,
+                context="emergency",
+                stored_first_name=stored_first_name,
+                unclear_prompt=patient_prompt_emergency_choice_unclear(language, emergency_policy),
+            )
             conversation_memory.add_message(clinic_id, from_number, "user", body)
             conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
             return reply_text
@@ -951,7 +1278,15 @@ def _generate_and_persist_reply(
                 logging.warning("No se pudo marcar same_day appointment_chosen", exc_info=True)
             same_day_appointment_chosen = True
         elif choice == "unclear":
-            reply_text = patient_prompt_same_day_choice_unclear(language, same_day_policy)
+            reply_text = _maybe_escalate_confusion_reply(
+                clinic_id=clinic_id,
+                from_number=from_number,
+                language=language,
+                confusion_policy=confusion_policy,
+                context="same_day",
+                stored_first_name=stored_first_name,
+                unclear_prompt=patient_prompt_same_day_choice_unclear(language, same_day_policy),
+            )
             conversation_memory.add_message(clinic_id, from_number, "user", body)
             conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
             return reply_text
@@ -980,8 +1315,55 @@ def _generate_and_persist_reply(
     except Exception:
         intent = Intent.OUT_OF_DOMAIN
 
+    last_assistant_text = _last_assistant_content(history)
+    user_non_answer = user_reply_is_non_answer(body, last_assistant_text)
+
+    if confusion_policy and confusion_policy.enabled and not user_non_answer:
+        try:
+            conversation_memory.clear_confusion_state(clinic_id, from_number)
+        except Exception:
+            logging.warning("No se pudo limpiar confusion_state", exc_info=True)
+
+    if confusion_policy and confusion_policy.enabled and user_non_answer:
+        menu_ctx = resolve_non_answer_menu_context(
+            last_assistant=last_assistant_text,
+            emergency_phase=emergency_phase,
+            same_day_phase=same_day_phase,
+            booking_phase=booking_phase,
+            history=history,
+        )
+        offered = offered_hours_for_non_answer_context(
+            context=menu_ctx,
+            last_assistant=last_assistant_text,
+            history=history,
+        )
+        if assistant_message_is_offer_reconfirm(last_assistant_text):
+            reask_prompt = patient_prompt_offer_response_unclear(
+                language,
+                service_name=last_discussed_service_name,
+            )
+        else:
+            reask_prompt = patient_prompt_non_answer_reask(
+                language,
+                last_assistant=last_assistant_text,
+            )
+        reply_text = _maybe_escalate_confusion_reply(
+            clinic_id=clinic_id,
+            from_number=from_number,
+            language=language,
+            confusion_policy=confusion_policy,
+            context=menu_ctx,
+            stored_first_name=stored_first_name,
+            unclear_prompt=reask_prompt,
+            offered_hours=offered,
+        )
+        conversation_memory.add_message(clinic_id, from_number, "user", body)
+        conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+        return reply_text
+
     if intent is Intent.OUT_OF_DOMAIN and is_contextual_offer_acceptance(body, history):
-        intent = Intent.CITA
+        if not user_reply_is_non_answer(body, _last_assistant_content(history)):
+            intent = Intent.CITA
 
     if intent is Intent.OUT_OF_DOMAIN and should_reconfirm_after_booking_offer(body, history):
         reply_text = patient_prompt_offer_response_unclear(
@@ -1002,13 +1384,31 @@ def _generate_and_persist_reply(
                 clinic_topics=merged_clinic_topics,
             )
         except Exception:
-            intent = Intent.OUT_OF_DOMAIN
+            intent = Intent.UNINTELLIGIBLE
 
     if intent is Intent.OUT_OF_DOMAIN and should_fail_open_after_offer_reconfirm(body, history):
         intent = Intent.CITA
 
     if name_just_corrected and intent is Intent.OUT_OF_DOMAIN:
         intent = Intent.SMALL_TALK
+
+    if intent is Intent.UNINTELLIGIBLE:
+        menu_ctx = resolve_confusion_context(
+            emergency_phase=emergency_phase,
+            same_day_phase=same_day_phase,
+            booking_phase=booking_phase,
+        )
+        reply_text = _activate_confusion_menu(
+            clinic_id=clinic_id,
+            from_number=from_number,
+            language=language,
+            confusion_policy=confusion_policy,
+            context=menu_ctx,
+            stored_first_name=stored_first_name,
+        )
+        conversation_memory.add_message(clinic_id, from_number, "user", body)
+        conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)
+        return reply_text
 
     if intent is Intent.OUT_OF_DOMAIN:
         if language == "en":
@@ -1436,6 +1836,42 @@ def _generate_and_persist_reply(
             conversation_memory.set_cordales_xray_phase(clinic_id, from_number, "asked")
         except Exception:
             pass
+
+    confusion_escalated_post_gemini = False
+    if confusion_policy and confusion_policy.enabled:
+        last_assistant = _last_assistant_content(history)
+        if looks_like_bot_repetition(last_assistant, reply_text):
+            try:
+                count = conversation_memory.bump_confusion_count(clinic_id, from_number)
+            except Exception:
+                count = 0
+                logging.warning("No se pudo incrementar confusion_count post-Gemini", exc_info=True)
+            if not isinstance(count, int):
+                count = 1
+            threshold = max(1, int(getattr(confusion_policy, "threshold", None) or 2))
+            if count >= threshold:
+                menu_context = resolve_non_answer_menu_context(
+                    last_assistant=last_assistant,
+                    emergency_phase=emergency_phase,
+                    same_day_phase=same_day_phase,
+                    booking_phase=booking_phase,
+                    history=history,
+                )
+                offered = offered_hours_for_non_answer_context(
+                    context=menu_context,
+                    last_assistant=last_assistant,
+                    history=history,
+                )
+                reply_text = _activate_confusion_menu(
+                    clinic_id=clinic_id,
+                    from_number=from_number,
+                    language=language,
+                    confusion_policy=confusion_policy,
+                    context=menu_context,
+                    stored_first_name=stored_first_name,
+                    offered_hours=offered,
+                )
+                confusion_escalated_post_gemini = True
 
     conversation_memory.add_message(clinic_id, from_number, "user", body)
     conversation_memory.add_message(clinic_id, from_number, "assistant", reply_text)

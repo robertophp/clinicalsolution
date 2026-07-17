@@ -86,10 +86,10 @@ class PediatricAgePolicies(BaseModel):
         ]
     )
     welcome_es: str = (
-        "¡Claro que sí! 😊 Atendemos niños y niñas de {min_age} añitos en adelante 🦷✨"
+        "¡Claro que sí! 😊 Atendemos niños y niñas de {min_age} añitos en adelante 🦷"
     )
     welcome_en: str = (
-        "Of course! 😊 We see children {min_age} years and older 🦷✨"
+        "Of course! 😊 We see children {min_age} years and older 🦷"
     )
     decline_es: str = (
         "Entendemos tu preocupación 💛 Lamentablemente solo atendemos pacientes de "
@@ -116,6 +116,21 @@ class EmergencyForkPolicies(BaseModel):
     choice_unclear_en: str | None = None
     transfer_sent_es: str | None = None
     transfer_sent_en: str | None = None
+
+
+class ConfusionLoopPolicies(BaseModel):
+    """
+    Anti-bucle de confusión: menú numérico de rescate cuando el agente no comprende al usuario.
+    El menú se deriva del contexto activo (emergencia, same-day, booking) o es general.
+    Configurable por clínica en ``policies.json``.
+    """
+
+    enabled: bool = False
+    threshold: int = 2
+    menu_es: str | None = None
+    menu_en: str | None = None
+    menu_unclear_es: str | None = None
+    menu_unclear_en: str | None = None
 
 
 class SameDayForkPolicies(BaseModel):
@@ -182,4 +197,7 @@ class ClinicPolicies(BaseModel):
     )
     same_day_fork_policy: SameDayForkPolicies = Field(
         default_factory=SameDayForkPolicies
+    )
+    confusion_loop_policy: ConfusionLoopPolicies = Field(
+        default_factory=ConfusionLoopPolicies
     )

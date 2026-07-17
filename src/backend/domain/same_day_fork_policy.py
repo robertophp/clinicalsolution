@@ -43,8 +43,8 @@ def patient_prompt_same_day_choice(
             "at least one day's notice, so we can't book for today — but we can connect you with our team "
             "to check if same-day slots are available.\n\n"
             "How would you like us to help?\n\n"
-            "📅 **Schedule you as soon as possible for tomorrow at the first available time**, or\n"
-            "📞 **Share your case with our team** so they can contact you as soon as possible.\n\n"
+            "**Schedule you as soon as possible for tomorrow at the first available time**, or\n"
+            "**Share your case with our team** so they can contact you as soon as possible.\n\n"
             "Which do you prefer?"
         )
     return (
@@ -52,8 +52,8 @@ def patient_prompt_same_day_choice(
         "agendan con al menos un día de anticipación, por lo que no podemos para hoy, sin embargo podemos "
         "direccionarte con alguien de nuestro equipo para ver si hay cupos disponibles hoy mismo.\n\n"
         "¿Cómo prefieres que te apoyemos?\n\n"
-        "📅 **Agendarte lo antes posible para mañana a primera hora**, o\n"
-        "📞 **Compartir tu caso con nuestro equipo** para que te contacten a la brevedad.\n\n"
+        "**Agendarte lo antes posible para mañana a primera hora**, o\n"
+        "**Compartir tu caso con nuestro equipo** para que te contacten a la brevedad.\n\n"
         "¿Cuál prefieres?"
     )
 
@@ -69,13 +69,13 @@ def patient_prompt_same_day_choice_unclear(
     if use_en:
         return (
             "I want to help you the right way 🙂 "
-            "Would you prefer 📅 the first available time tomorrow, "
-            "or 📞 that our team contact you as soon as possible?"
+            "Would you prefer the first available time tomorrow, "
+            "or that our team contact you as soon as possible?"
         )
     return (
         "Quiero ayudarte de la mejor forma 🙂 "
-        "¿Prefieres 📅 lo antes posible mañana a primera hora, "
-        "o 📞 que nuestro equipo te contacte a la brevedad?"
+        "¿Prefieres lo antes posible mañana a primera hora, "
+        "o que nuestro equipo te contacte a la brevedad?"
     )
 
 
@@ -98,14 +98,14 @@ def patient_prompt_same_day_transfer_sent(
             "Your message has been forwarded to our team ✅ "
             "Please stay alert — they will contact you as soon as possible."
             f"{phone_line}\n\n"
-            "If you have any other questions, I'm happy to help 😊"
+            "If you have any other questions, I'm happy to help."
         )
     phone_line_es = f"\n\nSi lo prefieres, también puedes llamarnos al **{phone}** 📞" if phone else ""
     return (
         "Tu mensaje ya fue direccionado a nuestro equipo ✅ "
         "Queda pendiente de su contacto a la brevedad."
         f"{phone_line_es}\n\n"
-        "Cualquier otra consulta, con gusto te ayudo 😊"
+        "Cualquier otra consulta, con gusto te ayudo."
     )
 
 

@@ -120,14 +120,14 @@ def patient_prompt_emergency_choice(
     if use_en:
         return (
             f"I'm so sorry you're going through this{name_bit} 🦷💛 How would you like us to help?\n\n"
-            "📅 **Schedule an emergency evaluation tomorrow at the first available time**, or\n"
-            "📞 **Share your case with our medical team** so they can contact you as soon as possible.\n\n"
+            "**Schedule an emergency evaluation tomorrow at the first available time**, or\n"
+            "**Share your case with our medical team** so they can contact you as soon as possible.\n\n"
             "Which works better for you?"
         )
     return (
         f"Lamento mucho que estés pasando por esto{name_bit} 🦷💛 ¿Cómo prefieres que te apoyemos?\n\n"
-        "📅 **Agendarte una cita de emergencia mañana a primera hora**, o\n"
-        "📞 **Compartir tu caso con nuestro equipo médico** para que te contacten a la brevedad.\n\n"
+        "**Agendarte una cita de emergencia mañana a primera hora**, o\n"
+        "**Compartir tu caso con nuestro equipo médico** para que te contacten a la brevedad.\n\n"
         "¿Cuál te viene mejor?"
     )
 
@@ -143,13 +143,13 @@ def patient_prompt_emergency_choice_unclear(
     if use_en:
         return (
             "I want to make sure I help you the right way 🙂 "
-            "Would you prefer 📅 an emergency appointment tomorrow at the first available time, "
-            "or 📞 that our medical team contact you as soon as possible?"
+            "Would you prefer an emergency appointment tomorrow at the first available time, "
+            "or that our medical team contact you as soon as possible?"
         )
     return (
         "Quiero ayudarte de la mejor forma 🙂 "
-        "¿Prefieres 📅 una cita de emergencia mañana a primera hora, "
-        "o 📞 que nuestro equipo médico te contacte a la brevedad?"
+        "¿Prefieres una cita de emergencia mañana a primera hora, "
+        "o que nuestro equipo médico te contacte a la brevedad?"
     )
 
 
@@ -172,14 +172,14 @@ def patient_prompt_emergency_transfer_sent(
             "Your message has been forwarded to our medical team ✅ "
             "Please stay alert — they will contact you as soon as possible."
             f"{phone_line}\n\n"
-            "If you have any other questions, I'm happy to help 😊"
+            "If you have any other questions, I'm happy to help."
         )
     phone_line_es = f"\n\nSi lo prefieres, también puedes llamarnos al **{phone}** 📞" if phone else ""
     return (
         "Tu mensaje ya fue direccionado a nuestro equipo médico ✅ "
         "Queda pendiente de su contacto a la brevedad."
         f"{phone_line_es}\n\n"
-        "Cualquier otra consulta, con gusto te ayudo 😊"
+        "Cualquier otra consulta, con gusto te ayudo."
     )
 
 

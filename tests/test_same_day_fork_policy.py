@@ -9,6 +9,7 @@ from backend.domain.same_day_fork_policy import (
 )
 from backend.domain.urgency_signals import message_signals_same_day_request, message_signals_urgency
 from backend.schemas.clinic_policies import SameDayForkPolicies
+from tests.emoji_utils import count_emojis as _emoji_count
 
 
 _POLICY = SameDayForkPolicies(enabled=True)
@@ -52,8 +53,8 @@ def test_same_day_choice_prompt_has_user_wording():
     assert "por este canal" in text
     assert "hoy, sin embargo" in text
     assert "cupos disponibles hoy mismo" in text
-    assert "📅" in text
-    assert "📞" in text
+    assert "🙏" in text
+    assert _emoji_count(text) <= 2
 
 
 def test_same_day_transfer_sent_includes_phone_and_confirmation():

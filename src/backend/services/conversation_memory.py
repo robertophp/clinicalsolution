@@ -148,6 +148,16 @@ class ConversationMemoryService:
             metadata["emergency_phase"] = data.get("emergency_phase")
         if "same_day_phase" in data:
             metadata["same_day_phase"] = data.get("same_day_phase")
+        if "confusion_count" in data:
+            metadata["confusion_count"] = data.get("confusion_count")
+        if "confusion_phase" in data:
+            metadata["confusion_phase"] = data.get("confusion_phase")
+        if "confusion_context" in data:
+            metadata["confusion_context"] = data.get("confusion_context")
+        if "confusion_menu_retries" in data:
+            metadata["confusion_menu_retries"] = data.get("confusion_menu_retries")
+        if "confusion_offered_hours" in data:
+            metadata["confusion_offered_hours"] = data.get("confusion_offered_hours")
         return metadata
 
     def add_message(
@@ -583,6 +593,89 @@ class ConversationMemoryService:
         doc_ref.set(
             {
                 "same_day_phase": "none",
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+
+    def bump_confusion_count(self, clinic_id: str, from_number: str) -> int:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        doc = doc_ref.get()
+        current = 0
+        if doc and doc.exists:
+            raw = (doc.to_dict() or {}).get("confusion_count")
+            if isinstance(raw, int) and raw >= 0:
+                current = raw
+        new_count = current + 1
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "confusion_count": new_count,
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+        return new_count
+
+    def set_confusion_awaiting_menu(
+        self,
+        clinic_id: str,
+        from_number: str,
+        *,
+        context: str,
+        offered_hours: list[str] | None = None,
+    ) -> None:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        payload: dict[str, Any] = {
+            "confusion_phase": "awaiting_menu_choice",
+            "confusion_context": (context or "general").strip() or "general",
+            "confusion_menu_retries": 0,
+            "updated_at": now,
+            "clinic_id": clinic_id,
+            "from_number": from_number,
+        }
+        if offered_hours:
+            payload["confusion_offered_hours"] = list(offered_hours)
+        else:
+            payload["confusion_offered_hours"] = firestore.DELETE_FIELD
+        doc_ref.set(payload, merge=True)
+
+    def bump_confusion_menu_retries(self, clinic_id: str, from_number: str) -> int:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        doc = doc_ref.get()
+        current = 0
+        if doc and doc.exists:
+            raw = (doc.to_dict() or {}).get("confusion_menu_retries")
+            if isinstance(raw, int) and raw >= 0:
+                current = raw
+        new_count = current + 1
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "confusion_menu_retries": new_count,
+                "updated_at": now,
+                "clinic_id": clinic_id,
+                "from_number": from_number,
+            },
+            merge=True,
+        )
+        return new_count
+
+    def clear_confusion_state(self, clinic_id: str, from_number: str) -> None:
+        doc_ref = self._db.collection(COLLECTION_NAME).document(_doc_id(clinic_id, from_number))
+        now = _now_utc()
+        doc_ref.set(
+            {
+                "confusion_count": firestore.DELETE_FIELD,
+                "confusion_phase": firestore.DELETE_FIELD,
+                "confusion_context": firestore.DELETE_FIELD,
+                "confusion_menu_retries": firestore.DELETE_FIELD,
+                "confusion_offered_hours": firestore.DELETE_FIELD,
                 "updated_at": now,
                 "clinic_id": clinic_id,
                 "from_number": from_number,
