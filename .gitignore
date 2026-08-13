@@ -1,5 +1,6 @@
 # GCP / secrets – do not commit
 key.json
+**/key.json
 .env
 .env.local
 .env.*.local

@@ -1,0 +1,33 @@
+{
+  "clinic_id": "demo_clinic_2",
+  "opening_hours": {
+    "mon_fri": {
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "from": "08:00",
+      "to": "17:00"
+    },
+    "sat_sun": {
+      "days": ["sat", "sun"],
+      "from": "08:00",
+      "to": "14:00"
+    }
+  },
+  "allowed_intents": ["cita", "servicios", "clinica_info", "seguimiento_cita", "small_talk"],
+  "calendar_id": null,
+  "calendar_sync_enabled": false,
+  "google_maps_link": null,
+  "indicaciones_parqueo": null,
+  "rutas_transporte_publico": null,
+  "whatsapp_phone_number_id": null,
+  "specialist_whatsapp": null,
+  "payment_methods": [
+    {
+      "es": "Efectivo y tarjeta en clínica.",
+      "en": "Cash and card at the clinic."
+    },
+    {
+      "es": "Transferencia bancaria previa a la cita si lo acuerdan con recepción.",
+      "en": "Bank transfer before the visit if arranged with reception."
+    }
+  ]
+}

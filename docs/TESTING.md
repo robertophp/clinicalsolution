@@ -5,7 +5,7 @@
 **Clinica Assistant Agent** is a backend for a **WhatsApp dental clinic assistant**:
 
 - **Twilio** receives WhatsApp messages and forwards them to your server.
-- Your server identifies the **clinic** via `?clinic_id=xxx`, loads that clinic’s **system prompt** from `backend/data/clinics_mock.json`.
+- Your server identifies the **clinic** via `?clinic_id=xxx`, loads that clinic’s **system prompt** from `src/backend/data/clinics/<clinic_id>/brand.json` (y el resto de config en la misma carpeta; ver [CLINIC_DATA.md](CLINIC_DATA.md)).
 - **Vertex AI Gemini 1.5 Flash** generates a reply using that prompt and the user message.
 - The reply is sent back as **TwiML** so Twilio can deliver it on WhatsApp.
 
@@ -20,8 +20,11 @@ You also have **BigQuery + SQLAlchemy** and a **Cita** (appointment) model set u
 ```powershell
 cd "c:\Users\rober\OneDrive\Desktop\AI projects\Clinica Assistant Agent\clinicalsolution"
 .venv\Scripts\activate
+pip install -r requirements.txt
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+`pip install -r requirements.txt` registra el paquete `backend` desde `src/backend/` en modo editable (ver `pyproject.toml`).
 
 In another terminal:
 
@@ -51,6 +54,7 @@ The app exposes a **JSON** endpoint that accepts the same inputs without form en
 ```powershell
 curl -X POST "http://localhost:8000/chat?clinic_id=demo_clinic_1" ^
   -H "Content-Type: application/json" ^
+  -H "Authorization: Bearer TU_INTERNAL_API_KEY" ^
   -d "{\"from_number\": \"+1234567890\", \"body\": \"Hola, quiero agendar una cita\"}"
 ```
 
@@ -96,7 +100,7 @@ Use the printed URL (e.g. `https://something.loca.lt`) in Twilio the same way as
 From project root with venv activated:
 
 ```powershell
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 pytest tests/ -v
 ```
 

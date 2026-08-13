@@ -1,0 +1,51 @@
+{
+  "clinic_id": "demo_clinic_1",
+  "human_transfer_topic_keys": null,
+  "transfer_topics_file": null,
+  "booking": {},
+  "cordales_panoramic_requirement": {
+    "enabled": true,
+    "trigger_terms": [
+      "cordal",
+      "cordales",
+      "muela del juicio",
+      "muelas del juicio",
+      "tercer molar",
+      "wisdom tooth"
+    ],
+    "target_service_ids": ["exodoncia_de_cordal_piezas"],
+    "evaluation_with_xray_service_id": "evaluacion_radiografia_panoramica",
+    "evaluation_only_service_id": "evaluacion",
+    "standalone_xray_service_id": "radiografia_panoramica",
+    "block_direct_cordal_booking": true
+  },
+  "pediatric_age_policy": {
+    "enabled": true,
+    "min_age": 6
+  },
+  "emergency_fork_policy": {
+    "enabled": true
+  },
+  "same_day_fork_policy": {
+    "enabled": true
+  },
+  "confusion_loop_policy": {
+    "enabled": true,
+    "threshold": 2
+  },
+  "maxillofacial_policy": {
+    "enabled": true,
+    "trigger_terms": [
+      "maxilo",
+      "maxilofacial",
+      "mucocele",
+      "cirugia maxilofacial",
+      "cirugía maxilofacial"
+    ],
+    "target_service_ids": [
+      "evaluacion_con_especialista_maxilofacial",
+      "cirugia_de_mucocele_maxilofacial"
+    ],
+    "block_direct_booking": true
+  }
+}
