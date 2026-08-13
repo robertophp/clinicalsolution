@@ -13,6 +13,7 @@ from ..repositories import (
     list_upcoming_activa_citas_for_phone,
     update_cita_status,
 )
+from ..repositories.cita_repository import count_activa_citas_at_slot
 from ..services.calendar_service import calendar_service, CalendarServiceError
 from . import availability
 from .calendar_retry import _retry_delete_event_async
@@ -260,8 +261,27 @@ def _handle_agendar_cita(
         except Exception:
             pass
 
+    if not _cm().try_lock_cita_slot(clinic_id, fecha, hora):
+        if language == "en":
+            msg = "That time slot is being booked right now, please try again in a few seconds."
+        else:
+            msg = "Ese horario se está reservando en este momento, por favor intenta de nuevo en unos segundos."
+        return {"error": "Slot en proceso de reserva", "mensaje": msg}
+
     db = SessionLocal()
     try:
+        # Re-chequeo de cupo justo antes del insert, dentro del lock del slot: BigQuery no
+        # soporta transacciones ni constraints únicos, así que esta es la única garantía real
+        # contra doble reserva cuando dos confirmaciones llegan casi al mismo tiempo.
+        cap = availability.max_appointments_per_slot_for_clinic(clinic_cfg) if clinic_cfg is not None else 1
+        ocupadas = count_activa_citas_at_slot(db, clinic_id=clinic_id, fecha=fecha, hora=hora)
+        if ocupadas >= cap:
+            if language == "en":
+                msg = "Sorry, that time just got fully booked. Please choose another time."
+            else:
+                msg = "Lo siento, ese horario se acaba de llenar. Por favor elige otra hora."
+            return {"error": "Cupo lleno", "mensaje": msg}
+
         cita = create_cita(
             db,
             clinic_id=clinic_id,
@@ -326,6 +346,10 @@ def _handle_agendar_cita(
         return {"error": str(e), "mensaje": msg}
     finally:
         db.close()
+        try:
+            _cm().release_cita_slot(clinic_id, fecha, hora)
+        except Exception:
+            pass
 
 
 def _handle_cancelar_cita(from_number: str, clinic_id: str, language: str) -> dict:

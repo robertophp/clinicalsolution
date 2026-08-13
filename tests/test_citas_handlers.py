@@ -46,6 +46,7 @@ def memory_svc():
     m = MagicMock()
     m.get_metadata.return_value = {}
     m.set_patient_name.return_value = None
+    m.try_lock_cita_slot.return_value = True
     set_conversation_memory_for_cita_handlers(m)
     return m
 
@@ -81,6 +82,7 @@ def test_agendar_cita_handler_ok_sin_bigquery_ni_calendar(memory_svc, demo_clini
         patch("backend.domain.citas_handlers.get_clinics_by_id", return_value=demo_clinic_sin_calendar),
         patch("backend.domain.citas_handlers.get_latest_self_cita_for_phone", return_value=None),
         patch("backend.domain.citas_handlers.SessionLocal", return_value=db_mock),
+        patch("backend.domain.citas_handlers.count_activa_citas_at_slot", return_value=0),
         patch("backend.domain.citas_handlers.create_cita", return_value=fake_cita) as mock_create,
     ):
         out = _handle_agendar_cita(
@@ -99,6 +101,8 @@ def test_agendar_cita_handler_ok_sin_bigquery_ni_calendar(memory_svc, demo_clini
     _fail_if_agendar_not_ok(out, context="[agendar ok]")
     mock_create.assert_called_once()
     assert db_mock.close.call_count == 2
+    memory_svc.try_lock_cita_slot.assert_called_once_with("demo_clinic_1", "2026-05-15", "13:00")
+    memory_svc.release_cita_slot.assert_called_once_with("demo_clinic_1", "2026-05-15", "13:00")
 
 
 def test_agendar_cita_para_tercero_no_set_patient_name(memory_svc, demo_clinic_sin_calendar):
@@ -113,6 +117,7 @@ def test_agendar_cita_para_tercero_no_set_patient_name(memory_svc, demo_clinic_s
         patch("backend.domain.availability._today_in_el_salvador", return_value=date(2026, 5, 13)),
         patch("backend.domain.citas_handlers.get_clinics_by_id", return_value=demo_clinic_sin_calendar),
         patch("backend.domain.citas_handlers.SessionLocal", return_value=db_mock),
+        patch("backend.domain.citas_handlers.count_activa_citas_at_slot", return_value=0),
         patch("backend.domain.citas_handlers.create_cita", return_value=fake_cita) as mock_create,
     ):
         out = _handle_agendar_cita(
@@ -181,6 +186,7 @@ def test_flujo_agendar_y_cancelar_en_secuencia(memory_svc, demo_clinic_sin_calen
         patch("backend.domain.citas_handlers.get_clinics_by_id", return_value=demo_clinic_sin_calendar),
         patch("backend.domain.citas_handlers.get_latest_self_cita_for_phone", return_value=None),
         patch("backend.domain.citas_handlers.SessionLocal", return_value=db_mock),
+        patch("backend.domain.citas_handlers.count_activa_citas_at_slot", return_value=0),
         patch("backend.domain.citas_handlers.create_cita", return_value=fake_cita),
     ):
         out_agendar = _handle_agendar_cita(
@@ -223,6 +229,7 @@ def test_agendar_cita_muestra_error_cuando_create_cita_falla(memory_svc, demo_cl
         patch("backend.domain.citas_handlers.get_clinics_by_id", return_value=demo_clinic_sin_calendar),
         patch("backend.domain.citas_handlers.get_latest_self_cita_for_phone", return_value=None),
         patch("backend.domain.citas_handlers.SessionLocal", return_value=db_mock),
+        patch("backend.domain.citas_handlers.count_activa_citas_at_slot", return_value=0),
         patch("backend.domain.citas_handlers.create_cita", side_effect=boom),
     ):
         out = _handle_agendar_cita(
@@ -241,6 +248,67 @@ def test_agendar_cita_muestra_error_cuando_create_cita_falla(memory_svc, demo_cl
     assert "error" in out, f"Se esperaba clave 'error' en la respuesta: {out!r}"
     assert boom.args[0] in str(out["error"]), f"El error debería propagarse en 'error': {out!r}"
     assert "mensaje" in out, f"Falta mensaje para el usuario: {out!r}"
+    memory_svc.release_cita_slot.assert_called_once_with("demo_clinic_1", "2026-05-15", "11:00")
+
+
+def test_agendar_cita_no_lock_devuelve_error_sin_insertar(memory_svc, demo_clinic_sin_calendar):
+    """Si otro request tiene el lock del slot, no debe llamar a create_cita ni tocar BigQuery."""
+    memory_svc.try_lock_cita_slot.return_value = False
+    db_mock = MagicMock()
+
+    with (
+        patch("backend.domain.availability._today_in_el_salvador", return_value=date(2026, 5, 13)),
+        patch("backend.domain.citas_handlers.get_clinics_by_id", return_value=demo_clinic_sin_calendar),
+        patch("backend.domain.citas_handlers.get_latest_self_cita_for_phone", return_value=None),
+        patch("backend.domain.citas_handlers.SessionLocal", return_value=db_mock),
+        patch("backend.domain.citas_handlers.create_cita") as mock_create,
+    ):
+        out = _handle_agendar_cita(
+            from_number="whatsapp:+50370000004",
+            clinic_id="demo_clinic_1",
+            language="es",
+            assistant_name="Asistente Test",
+            args={
+                "nombre": "Carla",
+                "fecha": "2026-05-15",
+                "hora": "14:00",
+                "servicio": "limpieza_dental",
+            },
+        )
+
+    assert out.get("error") == "Slot en proceso de reserva", f"Respuesta inesperada: {out!r}"
+    mock_create.assert_not_called()
+    memory_svc.release_cita_slot.assert_not_called()
+
+
+def test_agendar_cita_cupo_lleno_en_recheck_devuelve_error_sin_insertar(memory_svc, demo_clinic_sin_calendar):
+    """Si el re-chequeo de cupo (dentro del lock) ya está lleno, no debe insertar la cita."""
+    db_mock = MagicMock()
+
+    with (
+        patch("backend.domain.availability._today_in_el_salvador", return_value=date(2026, 5, 13)),
+        patch("backend.domain.citas_handlers.get_clinics_by_id", return_value=demo_clinic_sin_calendar),
+        patch("backend.domain.citas_handlers.get_latest_self_cita_for_phone", return_value=None),
+        patch("backend.domain.citas_handlers.SessionLocal", return_value=db_mock),
+        patch("backend.domain.citas_handlers.count_activa_citas_at_slot", return_value=1),
+        patch("backend.domain.citas_handlers.create_cita") as mock_create,
+    ):
+        out = _handle_agendar_cita(
+            from_number="whatsapp:+50370000005",
+            clinic_id="demo_clinic_1",
+            language="es",
+            assistant_name="Asistente Test",
+            args={
+                "nombre": "Diego",
+                "fecha": "2026-05-15",
+                "hora": "15:00",
+                "servicio": "limpieza_dental",
+            },
+        )
+
+    assert out.get("error") == "Cupo lleno", f"Respuesta inesperada: {out!r}"
+    mock_create.assert_not_called()
+    memory_svc.release_cita_slot.assert_called_once_with("demo_clinic_1", "2026-05-15", "15:00")
 
 
 def test_cancelar_sin_cita_activa_devuelve_error_claro(memory_svc, demo_clinic_sin_calendar):

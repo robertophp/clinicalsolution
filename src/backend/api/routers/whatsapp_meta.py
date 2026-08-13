@@ -4,6 +4,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import PlainTextResponse, Response
 
 from ...bootstrap import (
@@ -103,7 +104,8 @@ async def meta_whatsapp_webhook(request: Request) -> Response:
             try:
                 from ...bootstrap import _generate_and_persist_reply
 
-                reply_text = _generate_and_persist_reply(
+                reply_text = await run_in_threadpool(
+                    _generate_and_persist_reply,
                     clinic_id=clinic_id,
                     from_number=from_number,
                     body=ev.text_body,

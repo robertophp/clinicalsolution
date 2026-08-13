@@ -5,6 +5,7 @@ import sys
 import traceback
 
 from fastapi import APIRouter, Form, Query, Response
+from fastapi.concurrency import run_in_threadpool
 from twilio.twiml.messaging_response import MessagingResponse
 
 from ...bootstrap import CLINICS_BY_ID
@@ -58,7 +59,8 @@ async def whatsapp_webhook(
     try:
         from ...bootstrap import _generate_and_persist_reply
 
-        reply_text = _generate_and_persist_reply(
+        reply_text = await run_in_threadpool(
+            _generate_and_persist_reply,
             clinic_id=clinic_id,
             from_number=from_number,
             body=body_stripped,
