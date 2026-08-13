@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 COLLECTION_NAME = "agentmemory"
 # Dedup de entregas repetidas del webhook Meta (mismo wamid); TTL opcional en consola GCP.
 META_WEBHOOK_WAMID_DEDUP_COLLECTION = "meta_webhook_wamid_dedup"
+# Lock corto por (clinic_id, fecha, hora) para serializar el chequeo de cupo + insert de
+# cita en BigQuery, que no soporta transacciones ni constraints únicos.
+CITA_SLOT_LOCK_COLLECTION = "cita_slot_locks"
+_CITA_SLOT_LOCK_STALE_SECONDS = 15
 
 
 def _doc_id(clinic_id: str, from_number: str) -> str:
@@ -29,6 +33,14 @@ def _doc_id(clinic_id: str, from_number: str) -> str:
     digits = re.sub(r"\D", "", from_number) or "unknown"
     safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", clinic_id)
     return f"{safe_id}_{digits}"
+
+
+def _slot_lock_doc_id(clinic_id: str, fecha: str, hora: str) -> str:
+    """Build a safe Firestore document ID for a (clinic_id, fecha, hora) slot lock."""
+    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", clinic_id)
+    safe_fecha = re.sub(r"[^a-zA-Z0-9_-]", "_", fecha)
+    safe_hora = re.sub(r"[^a-zA-Z0-9_-]", "_", hora)
+    return f"{safe_id}_{safe_fecha}_{safe_hora}"
 
 
 def _now_utc() -> datetime:
@@ -707,6 +719,50 @@ class ConversationMemoryService:
         except Exception:
             logger.exception("Meta webhook dedup: error Firestore; se procesa el mensaje (fail-open)")
             return True
+
+    def try_lock_cita_slot(self, clinic_id: str, fecha: str, hora: str) -> bool:
+        """
+        Adquiere un lock corto por (clinic_id, fecha, hora) para que solo una request a la vez
+        pueda contar cupo + insertar cita en BigQuery para ese slot (evita doble reserva por
+        carrera cuando dos confirmaciones llegan casi al mismo tiempo).
+
+        Retorna ``True`` si se obtuvo el lock. Retorna ``False`` si otra request lo tiene ahora
+        mismo. Si Firestore falla, fail-open: retorna ``True`` (no bloquea el booking por un
+        problema de infraestructura ajeno a la disponibilidad real).
+        """
+        ref = self._db.collection(CITA_SLOT_LOCK_COLLECTION).document(_slot_lock_doc_id(clinic_id, fecha, hora))
+        now = _now_utc()
+        try:
+            ref.create({"clinic_id": clinic_id, "fecha": fecha, "hora": hora, "locked_at": now})
+            return True
+        except Conflict:
+            try:
+                snap = ref.get()
+                locked_at = _parse_timestamp(snap.get("locked_at")) if snap.exists else None
+                stale = locked_at and (now - locked_at).total_seconds() > _CITA_SLOT_LOCK_STALE_SECONDS
+            except Exception:
+                logger.exception("Slot lock: error verificando lock existente")
+                stale = False
+            if not stale:
+                return False
+            # Lock abandonado (crash/timeout de la request anterior sin liberar): se reclama.
+            try:
+                ref.set({"clinic_id": clinic_id, "fecha": fecha, "hora": hora, "locked_at": now})
+                return True
+            except Exception:
+                logger.exception("Slot lock: error reclamando lock viejo")
+                return False
+        except Exception:
+            logger.exception("Slot lock: error Firestore; se procesa el booking (fail-open)")
+            return True
+
+    def release_cita_slot(self, clinic_id: str, fecha: str, hora: str) -> None:
+        """Libera el lock de slot adquirido con ``try_lock_cita_slot``."""
+        ref = self._db.collection(CITA_SLOT_LOCK_COLLECTION).document(_slot_lock_doc_id(clinic_id, fecha, hora))
+        try:
+            ref.delete()
+        except Exception:
+            logger.exception("Slot lock: error liberando lock")
 
 
 __all__ = ["ConversationMemoryService", "COLLECTION_NAME", "META_WEBHOOK_WAMID_DEDUP_COLLECTION"]

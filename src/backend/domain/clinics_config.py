@@ -41,7 +41,10 @@ def build_whatsapp_phone_number_id_map(clinics: Dict[str, ClinicConfig]) -> Dict
     Mapea Meta ``phone_number_id`` → ``clinic_id``.
 
     Registra ``whatsapp_phone_number_id`` (producción) y ``whatsapp_phone_number_id_dev``
-    (prueba) para enrutar STG y PROD sin cambiar ramas de git.
+    (prueba). Cada número se registra en el webhook del servicio Cloud Run correspondiente
+    (dev o prod, desplegados por separado desde las ramas ``dev`` y ``main``); este mapa
+    solo resuelve a qué clínica pertenece cada ``phone_number_id`` una vez que el evento
+    ya llegó al servicio.
     """
     m: Dict[str, str] = {}
     for cid, cfg in clinics.items():

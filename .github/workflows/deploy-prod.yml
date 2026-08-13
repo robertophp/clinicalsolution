@@ -1,41 +1,42 @@
-# Corre los tests y despliega el servicio Cloud Run de "dev" al hacer push a la rama `dev`.
+# Corre los tests y despliega el servicio Cloud Run de producción al hacer push a la rama `main`.
 # El job `deploy` depende de `test`: si un test falla, no se construye ni se despliega imagen.
+# Este servicio (clinicalsolution-prod) no existe todavía en GCP: `gcloud run deploy` lo crea
+# automáticamente la primera vez que corre este workflow, no hace falta crearlo a mano.
 #
-# Usa el GitHub Environment "dev" (Settings → Environments). La mayoría de los secretos
-# (GCP_*, META_*) son los mismos en dev y prod: basta con dejarlos como Repository secrets,
-# se leen igual desde un job con `environment:` aunque no exista un secreto con ese nombre
-# en el Environment. Solo INTERNAL_API_KEY y DASHBOARD_SESSION_SECRET conviene que tengan un
-# valor DISTINTO por ambiente — esos sí hay que definirlos dentro del Environment "dev" (y
-# otro valor distinto dentro de "production") para que el que está scoped al environment gane
-# sobre el de repo. Ver docs/DEPLOYMENT_ENVIRONMENTS.md.
+# Usa el GitHub Environment "production" (Settings → Environments; recomendado: exigir
+# revisor/aprobación manual antes de que corra el job `deploy` acá). La mayoría de los
+# secretos (GCP_*, META_*) son los mismos en dev y prod: basta con dejarlos como Repository
+# secrets. Solo INTERNAL_API_KEY y DASHBOARD_SESSION_SECRET conviene que tengan un valor
+# DISTINTO al de dev — defínelos dentro del Environment "production" para que el valor
+# scoped al environment gane sobre el de repo. Ver docs/DEPLOYMENT_ENVIRONMENTS.md.
 #   Obligatorios:
 #     GCP_PROJECT_ID
-#     GCP_REGION              (ej. us-central1)
-#     GCP_SA_KEY              JSON de cuenta de servicio (deploy: Run Admin, AR Writer, SA User)
+#     GCP_REGION                 (ej. us-central1)
+#     GCP_SA_KEY                 JSON de cuenta de servicio (deploy: Run Admin, AR Writer, SA User)
 #     META_WHATSAPP_ACCESS_TOKEN
 #     META_APP_SECRET
 #     META_WEBHOOK_VERIFY_TOKEN
+#     INTERNAL_API_KEY           obligatorio en producción (ver api/startup_checks.py) — si
+#                                 falta, el contenedor arranca y muere solo
 #   Recomendado:
-#     GCP_RUN_SERVICE_ACCOUNT  email de la SA que ejecuta Cloud Run (Vertex, BQ, Firestore)
-#   Opcional (STG):
-#     INTERNAL_API_KEY         si no existe, /chat queda sin API key (válido con APP_ENV=development)
-#     DASHBOARD_SESSION_SECRET si no existe, el login del dashboard de métricas queda deshabilitado
+#     GCP_RUN_SERVICE_ACCOUNT    email de la SA que ejecuta Cloud Run (Vertex, BQ, Firestore)
+#     DASHBOARD_SESSION_SECRET   si no existe, el login del dashboard de métricas queda deshabilitado
 
-name: Deploy STG (Cloud Run)
+name: Deploy PROD (Cloud Run)
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
   workflow_dispatch:
 
 env:
   AR_REPOSITORY: clinicalsolution
-  CLOUD_RUN_SERVICE: clinicalsolution-stg
+  CLOUD_RUN_SERVICE: clinicalsolution-prod
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    environment: dev
+    environment: production
     permissions:
       contents: read
       id-token: write
@@ -63,7 +64,7 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
-    environment: dev
+    environment: production
     permissions:
       contents: read
       id-token: write
@@ -96,7 +97,7 @@ jobs:
           docker push "${IMAGE}"
           echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
 
-      - name: Deploy to Cloud Run (STG)
+      - name: Deploy to Cloud Run (PROD)
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           REGION: ${{ secrets.GCP_REGION }}
@@ -108,18 +109,16 @@ jobs:
           GCP_RUN_SERVICE_ACCOUNT: ${{ secrets.GCP_RUN_SERVICE_ACCOUNT }}
         run: |
           set -euo pipefail
-          ENV_VARS="APP_ENV=development"
+          ENV_VARS="APP_ENV=production"
           ENV_VARS="${ENV_VARS},PROJECT_ID=${PROJECT_ID}"
           ENV_VARS="${ENV_VARS},LOCATION=${REGION}"
-          ENV_VARS="${ENV_VARS},BIGQUERY_DATASET=clinica_datos"
-          ENV_VARS="${ENV_VARS},FIRESTORE_DATABASE_ID=agentmemory"
+          ENV_VARS="${ENV_VARS},BIGQUERY_DATASET=cita_datos_prod"
+          ENV_VARS="${ENV_VARS},FIRESTORE_DATABASE_ID=agentmemory-prod"
           ENV_VARS="${ENV_VARS},META_WEBHOOK_SKIP_SIGNATURE_VERIFY=false"
           ENV_VARS="${ENV_VARS},META_WHATSAPP_ACCESS_TOKEN=${META_WHATSAPP_ACCESS_TOKEN}"
           ENV_VARS="${ENV_VARS},META_APP_SECRET=${META_APP_SECRET}"
           ENV_VARS="${ENV_VARS},META_WEBHOOK_VERIFY_TOKEN=${META_WEBHOOK_VERIFY_TOKEN}"
-          if [ -n "${INTERNAL_API_KEY}" ]; then
-            ENV_VARS="${ENV_VARS},INTERNAL_API_KEY=${INTERNAL_API_KEY}"
-          fi
+          ENV_VARS="${ENV_VARS},INTERNAL_API_KEY=${INTERNAL_API_KEY}"
           if [ -n "${DASHBOARD_SESSION_SECRET}" ]; then
             ENV_VARS="${ENV_VARS},DASHBOARD_SESSION_SECRET=${DASHBOARD_SESSION_SECRET}"
           fi
