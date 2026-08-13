@@ -38,6 +38,27 @@ Decisiones ya tomadas (no volver a preguntar):
 - El corte del número real de WhatsApp es un paso **manual en Meta Developer Console**
   (reapuntar la URL del webhook): un WABA/App de Meta solo tiene una URL de webhook activa a
   la vez, no es algo que resuelva el código.
+- **Corrección importante (confirmada en vivo, 12-ago-2026):** el webhook de Meta se configura
+  en "Configure webhooks" a nivel de App/WABA, **no por número individual**. Esto significa que
+  dev y prod **nunca reciben tráfico de WhatsApp al mismo tiempo** — mover la URL mueve todos
+  los números registrados en esa App juntos (el de prueba y el real). El plan original de
+  "número de prueba fijo en dev, número real fijo en prod, ambos simultáneos" no es posible sin
+  una segunda App de Meta dedicada a dev (no se hizo — ver "Flujo de trabajo" abajo).
+
+## Incidente resuelto: `cita_datos_prod` no existía
+
+Durante el dry run con el número de prueba (webhook apuntado a `clinicalsolution-prod`), agendar
+una cita falló con `Not found: Dataset clinicalassistant-489223:cita_datos_prod was not found in
+location US`. Se verificó directo contra la API de BigQuery: el dataset **nunca se había creado**
+(a diferencia de lo asumido antes) — solo existía `clinica_datos` (location `US`, tablas `citas`
+18 columnas y `mensajes` 5 columnas).
+
+Se creó `cita_datos_prod` en location `US` (misma región que `clinica_datos`, para evitar
+ambigüedad ya que la connection string de `database.py` no especifica location explícita), y se
+replicaron ambas tablas: `citas` vía `Base.metadata.create_all(engine)` (mismo modelo SQLAlchemy
+que usa el código, garantiza que el esquema coincide) y `mensajes` vía el script existente
+`scripts/create_bigquery_mensajes_table.py` (ya era idempotente y respeta `BIGQUERY_DATASET`).
+Verificado: ambos datasets tienen ahora el mismo esquema (18 y 5 columnas respectivamente).
 
 ## Cambios de código ya aplicados (rama `feature/infra`, sin commitear a la fecha)
 
@@ -74,20 +95,66 @@ a cada servicio:
 - [x] Dentro del Environment `production`: secreto `INTERNAL_API_KEY` (valor real, distinto).
 - [ ] El resto de los 8 secretos existentes se quedan como están a nivel de repo — no hace
       falta copiarlos dentro de cada Environment (ya confirmado, sin acción pendiente).
-- [ ] Commit + push de `feature/infra` → `dev`; validar que `clinicalsolution-stg` sigue
-      desplegando bien con el job de tests corriendo y el Environment `dev` enlazado.
-- [ ] Promover `dev` → `main` para que `deploy-prod.yml` cree `clinicalsolution-prod` por
-      primera vez (el servicio no existe aún en GCP — lo crea `gcloud run deploy` solo, no
-      hace falta crearlo a mano en la consola).
-- [ ] Verificar arranque limpio del nuevo servicio (`GET /health/gcp` con `INTERNAL_API_KEY`).
-- [ ] Revisar `clinica_datos.citas` por citas activas con fecha futura antes del corte
-      (no se migran — decidir caso por caso si aparecen).
-- [ ] Corte: reapuntar la URL de webhook en Meta Developer Console hacia
-      `clinicalsolution-prod`.
-- [ ] Verificar con un mensaje real que la cita cae en `cita_datos_prod`, no en
-      `clinica_datos`.
-- [ ] `clinicalsolution-stg` queda viva como red de seguridad — no se apaga ni se borra tras
-      el corte.
+- [x] Commit + PR + merge de `feature/infra` → `dev`. `deploy-stg.yml` corrió el job `test` y
+      desplegó bien sobre `clinicalsolution-stg`. Validado en vivo: cita de prueba agendada,
+      visible en BigQuery, Google Calendar y el dashboard — el fix async y el lock
+      anti-doble-reserva ya están corriendo en el servicio real.
+- [x] Promover `dev` → `main` (PR #22). `deploy-prod.yml` corrió y creó `clinicalsolution-prod`.
+      URL: `https://clinicalsolution-prod-751868423989.us-central1.run.app`
+- [x] Verificar arranque limpio del nuevo servicio: `/health` → OK, `/health/meta` → Meta
+      configurado y ambos `phone_number_id` de `demo_clinic_1` mapeados, `/health/gcp` →
+      `firestore: ok`, `gemini: ok`. `clinicalsolution-prod` arranca limpio.
+- [x] Corte: el webhook de Meta (el único de la App, ver nota arriba) quedó apuntando a
+      `clinicalsolution-prod` — confirmado que el número real ya responde desde ahí.
+- [x] Revisado `clinica_datos.citas` por citas activas con fecha futura (después del corte, no
+      antes — no se alcanzó a hacer en orden). Resultado: 1 fila (Roberto Menjivar,
+      whatsapp:+50374351282, 2026-08-13 16:00, demo_clinic_1) — confirmada como cita de prueba
+      propia, no de un paciente real. Decisión: se deja como está en `clinica_datos`, no se migra.
+- [x] Verificado con mensaje real (número real) que la respuesta viene de `clinicalsolution-prod`.
+- [x] Dashboard de métricas apuntando a prod: el código ya lee el dataset/Firestore por
+      ambiente sin hardcodear nada (`metrics_repository.py` usa `effective_dataset()`), así que
+      no hizo falta cambiar código. Lo que sí faltaba: la colección `dashboard_users` vive en
+      Firestore, y estaba vacía en `agentmemory-prod` (0 usuarios, vs. 1 — `stephanie.palacios`,
+      `demo_clinic_1` — en `agentmemory` dev). Se creó el mismo usuario en prod con
+      `scripts/create_dashboard_user.py` (`FIRESTORE_DATABASE_ID=agentmemory-prod`). Confirmado:
+      login funciona en `https://clinicalsolution-prod-751868423989.us-central1.run.app/dashboard`
+      y los datos mostrados corresponden a prod.
+- `clinicalsolution-stg` sigue viva pero **ya no recibe tráfico de WhatsApp** (el único webhook
+  de la App apunta a prod). Sigue siendo útil como red de seguridad vía rollback de Cloud Run
+  (revertir a la revisión anterior sin tocar Meta) y como target de pruebas por `/chat` — no se
+  apaga ni se borra.
+
+## Flujo de trabajo (post-corte)
+
+Como dev y prod no pueden recibir WhatsApp a la vez (un solo webhook por App), las pruebas por
+WhatsApp real dejan de ser el camino del día a día. Flujo elegido:
+
+1. Cambios de código en una rama de trabajo → merge a `dev` → `deploy-stg.yml` corre tests y
+   despliega sobre `clinicalsolution-stg` (sin afectar a pacientes reales, porque ese servicio
+   ya no tiene ningún número de WhatsApp apuntándole).
+2. Probar la conversación **sin pasar por WhatsApp**, contra `clinicalsolution-stg`, con el
+   endpoint que ya existe para esto en el código (`api/routers/chat.py`):
+
+   ```bash
+   curl -X POST "https://clinicalsolution-stg-751868423989.us-central1.run.app/chat?clinic_id=demo_clinic_1" \
+     -H "Authorization: Bearer <INTERNAL_API_KEY de dev>" \
+     -H "Content-Type: application/json" \
+     -d '{"from_number": "+50370000000", "body": "Hola, quiero agendar una cita"}'
+   ```
+
+   Responde JSON `{"reply": "..."}` — mismo `_generate_and_persist_reply` que usa WhatsApp,
+   mismo Firestore/BigQuery de dev (`clinica_datos` / `agentmemory`), cero riesgo para prod.
+3. Conforme con las pruebas → merge `dev` → `main` → `deploy-prod.yml` corre tests y despliega
+   una revisión nueva sobre `clinicalsolution-prod` (misma URL de siempre — el webhook de Meta
+   no se vuelve a tocar en cada deploy, solo cambia la revisión detrás de esa URL).
+4. Si algo sale mal después de un deploy a prod: rollback de Cloud Run a la revisión anterior
+   (`gcloud run services update-traffic clinicalsolution-prod --to-revisions=REVISION_ANTERIOR=100`),
+   sin tocar Meta Developer Console para nada.
+
+Pendiente si más adelante se quiere volver a probar con WhatsApp real antes de cada promoción a
+`main` (no bloqueante, evaluar solo si hace falta): crear una segunda App de Meta dedicada al
+número de prueba, con su propio webhook fijo hacia `clinicalsolution-stg`, para que dev y prod
+puedan convivir con WhatsApp real de forma simultánea y permanente.
 
 ## Hallazgos de la auditoría original — estado
 
